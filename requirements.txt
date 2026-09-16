@@ -8,5 +8,4 @@ plotly>=5.18
 dash>=2.16
 statsmodels>=0.14
 python-dotenv>=1.0
-jupyter>=1.0
-matplotlib>=3.7
+gunicorn>=22.0

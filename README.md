@@ -53,6 +53,7 @@ python data/fetch_cpi.py     # CPI-U, for inflation-adjusted wage compression
 ### Explore the notebooks
 
 ```bash
+pip install -r requirements-dev.txt   # adds jupyter + matplotlib on top of requirements.txt
 jupyter notebook notebooks/
 ```
 - `01_eda_occupation_panel.ipynb` — employment/wage distributions, regional comparison, growth trends
@@ -71,15 +72,29 @@ jupyter notebook notebooks/
 
 A 5th tab (Fairness & Equity audit) is **not built** — the original plan's approach of inferring gender/age from job-posting text is methodologically weak, and this build has no job-postings data source at all. Needs a sounder methodology before implementation.
 
+## Deployment (Render)
+
+The repo is Render-ready as-is:
+
+1. On [render.com](https://render.com), **New > Blueprint**, point it at this repo — `render.yaml` configures the build (`pip install -r requirements.txt`) and start (`gunicorn app.app:server`) commands automatically.
+2. Or set up a **New > Web Service** manually with those same two commands, Python 3.11+, free plan is fine.
+
+No environment variables or secrets are required — the dashboard reads only the processed CSVs and trained model already committed under `data/processed/` (see [.gitignore](.gitignore) for why those, unlike raw BLS archives, are tracked: Render has no reliable way to regenerate them at build time against BLS's API, which has had multi-day outages during development).
+
+`app/app.py`'s `if __name__ == "__main__"` block still works for local dev (`python app/app.py`, reads `PORT`/`DASH_DEBUG` env vars, defaults to `localhost:8051` with debug on) — gunicorn is only used in production per the `Procfile`.
+
 ## Project Structure
 
 ```
 labor-market-displacement-forecaster/
 ├── README.md              # this file
-├── requirements.txt
+├── requirements.txt        # runtime deps (what Render installs)
+├── requirements-dev.txt    # + jupyter/matplotlib for notebooks
+├── Procfile                 # gunicorn start command
+├── render.yaml              # Render Blueprint config
 ├── LICENSE                 # MIT
 ├── .gitignore
-├── data/                   # acquisition scripts (BLS OEWS/JOLTS/CPI fetchers)
+├── data/                   # acquisition scripts (BLS OEWS/JOLTS/CPI fetchers) + processed/ (tracked, see Deployment)
 ├── src/                    # feature engineering + model training
 ├── notebooks/              # EDA and model evaluation (executed, real outputs)
 ├── app/                    # Plotly Dash dashboard

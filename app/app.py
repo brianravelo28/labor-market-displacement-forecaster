@@ -51,6 +51,7 @@ DEFAULT_OCC = df.loc[df["employment_level"].idxmax(), "occ_code"]
 
 app = dash.Dash(__name__)
 app.title = "Occupation Displacement & Wage Compression Forecaster"
+server = app.server  # exposes the underlying Flask app for gunicorn (see Procfile)
 
 tab1_content = html.Div(
     children=[
@@ -517,4 +518,11 @@ def update_scenario_tab(occ_code, region, gdp_pct, automation_pct, immigration_p
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8051)
+    # Render (and most PaaS) inject PORT; gunicorn is used in production
+    # instead of this block anyway (see Procfile), but keep local `python
+    # app/app.py` working the same way it always has.
+    import os
+
+    port = int(os.environ.get("PORT", 8051))
+    debug = os.environ.get("DASH_DEBUG", "true").lower() == "true"
+    app.run(debug=debug, host="0.0.0.0", port=port)

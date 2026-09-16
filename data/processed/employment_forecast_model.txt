@@ -1,0 +1,166 @@
+tree
+version=v4
+num_class=1
+num_tree_per_iteration=1
+label_index=0
+max_feature_idx=9
+objective=regression
+feature_names=employment_level wage_annual_mean wage_annual_median employment_change_yoy_pct wage_growth_yoy_pct employment_change_5yr_cagr wage_growth_5yr_cagr contraction_flag_12mo region occ_major_group
+feature_infos=[50:3659670] [22020:197840] [19860:185950] [-63.611615245009077:225] [-28.019323671497588:60.615241202516899] [-0.34188317138839341:0.65054442394898837] [-0.082351566931005094:0.1291982595688547] [0:1] -1:1:0 -1:20:16:7:19:18:9:21:4:3:8:0:14:1:15:11:5:12:10:13:17:6
+tree_sizes=1113
+
+Tree=0
+num_leaves=11
+num_cat=1
+split_feature=0 3 0 6 9 5 5 0 3 5
+split_gain=3.21189 2.19955 2.81501 2.8877 1.25361 0.875138 1.04146 0.990129 0.272489 0.53063
+threshold=165.00000000000003 -30.014245014245009 425.00000000000006 0.0070608894686393009 0 0.067758543315816613 -0.060135139715154391 7525.0000000000009 12.130954369166252 0.084013413918887017
+decision_type=2 2 2 2 9 2 2 2 2 2
+left_child=-1 -2 3 -3 8 6 -6 -7 9 -4
+right_child=1 2 4 -5 5 7 -8 -9 -10 -11
+leaf_value=-0.010852548997698112 -0.012901863226438322 -0.055411003566506391 -0.026520030282269989 -0.030260596003853165 -0.034737109786369291 -0.04075481274282039 -0.028980365086453422 -0.027735376735323204 -0.021484458638541457 -0.033580554773561463
+leaf_weight=24 20 21 323 25 92 40 538 23 23 29
+leaf_count=24 20 21 323 25 92 40 538 23 23 29
+internal_value=-0.0289533 -0.0293364 -0.0296315 -0.0417423 -0.0291098 -0.0303591 -0.029821 -0.0360017 -0.0268079 -0.0271017
+internal_weight=1158 1134 1114 46 1068 693 630 63 375 352
+internal_count=1158 1134 1114 46 1068 693 630 63 375 352
+cat_boundaries=0 1
+cat_threshold=2629187
+is_linear=0
+shrinkage=1
+
+
+end of trees
+
+feature_importances:
+employment_level=3
+employment_change_5yr_cagr=3
+employment_change_yoy_pct=2
+wage_growth_5yr_cagr=1
+occ_major_group=1
+
+parameters:
+[boosting: gbdt]
+[objective: regression]
+[metric: l2]
+[tree_learner: serial]
+[device_type: cpu]
+[data_sample_strategy: bagging]
+[data: ]
+[valid: ]
+[num_iterations: 300]
+[learning_rate: 0.05]
+[num_leaves: 32]
+[num_threads: 4]
+[seed: 0]
+[deterministic: 0]
+[force_col_wise: 0]
+[force_row_wise: 0]
+[histogram_pool_size: -1]
+[max_depth: 6]
+[min_data_in_leaf: 20]
+[min_sum_hessian_in_leaf: 0.001]
+[bagging_fraction: 0.9]
+[pos_bagging_fraction: 1]
+[neg_bagging_fraction: 1]
+[bagging_freq: 1]
+[bagging_seed: 3]
+[bagging_by_query: 0]
+[feature_fraction: 0.75]
+[feature_fraction_bynode: 1]
+[feature_fraction_seed: 2]
+[extra_trees: 0]
+[extra_seed: 6]
+[early_stopping_round: 0]
+[early_stopping_min_delta: 0]
+[first_metric_only: 0]
+[max_delta_step: 0]
+[lambda_l1: 0]
+[lambda_l2: 0]
+[linear_lambda: 0]
+[min_gain_to_split: 0]
+[drop_rate: 0.1]
+[max_drop: 50]
+[skip_drop: 0.5]
+[xgboost_dart_mode: 0]
+[uniform_drop: 0]
+[drop_seed: 4]
+[top_rate: 0.2]
+[other_rate: 0.1]
+[min_data_per_group: 100]
+[max_cat_threshold: 32]
+[cat_l2: 10]
+[cat_smooth: 10]
+[max_cat_to_onehot: 4]
+[top_k: 20]
+[monotone_constraints: ]
+[monotone_constraints_method: basic]
+[monotone_penalty: 0]
+[feature_contri: ]
+[forcedsplits_filename: ]
+[refit_decay_rate: 0.9]
+[cegb_tradeoff: 1]
+[cegb_penalty_split: 0]
+[cegb_penalty_feature_lazy: ]
+[cegb_penalty_feature_coupled: ]
+[path_smooth: 0]
+[interaction_constraints: ]
+[verbosity: -1]
+[saved_feature_importance_type: 0]
+[use_quantized_grad: 0]
+[num_grad_quant_bins: 4]
+[quant_train_renew_leaf: 0]
+[stochastic_rounding: 1]
+[linear_tree: 0]
+[max_bin: 255]
+[max_bin_by_feature: ]
+[min_data_in_bin: 3]
+[bin_construct_sample_cnt: 200000]
+[data_random_seed: 1]
+[is_enable_sparse: 1]
+[enable_bundle: 1]
+[use_missing: 1]
+[zero_as_missing: 0]
+[feature_pre_filter: 1]
+[pre_partition: 0]
+[two_round: 0]
+[header: 0]
+[label_column: ]
+[weight_column: ]
+[group_column: ]
+[ignore_column: ]
+[categorical_feature: 8,9]
+[forcedbins_filename: ]
+[precise_float_parser: 0]
+[parser_config_file: ]
+[objective_seed: 5]
+[num_class: 1]
+[is_unbalance: 0]
+[scale_pos_weight: 1]
+[sigmoid: 1]
+[boost_from_average: 1]
+[reg_sqrt: 0]
+[alpha: 0.9]
+[fair_c: 1]
+[poisson_max_delta_step: 0.7]
+[tweedie_variance_power: 1.5]
+[lambdarank_truncation_level: 30]
+[lambdarank_norm: 1]
+[label_gain: ]
+[lambdarank_position_bias_regularization: 0]
+[eval_at: ]
+[multi_error_top_k: 1]
+[auc_mu_weights: ]
+[num_machines: 1]
+[local_listen_port: 12400]
+[time_out: 120]
+[machine_list_filename: ]
+[machines: ]
+[gpu_platform_id: -1]
+[gpu_device_id: -1]
+[gpu_use_dp: 0]
+[num_gpu: 1]
+
+end of parameters
+
+pandas_categorical:[["FL", "US"], ["11", "13", "15", "17", "19", "21", "23", "25", "27", "29", "31", "33", "35", "37", "39", "41", "43", "45", "47", "49", "51", "53"]]

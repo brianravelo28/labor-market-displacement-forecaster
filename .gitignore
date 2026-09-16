@@ -1,9 +1,14 @@
 .env
 data/raw/
-data/processed/*
-!data/processed/.gitkeep
 __pycache__/
 *.pyc
 .venv/
 venv/
 .ipynb_checkpoints/
+
+# data/processed/ IS tracked (unlike data/raw/): Render deploys straight from
+# this repo with no build-time access to BLS (which has had multi-day
+# outages during development), so the app needs its processed CSVs +
+# trained model committed rather than regenerated at build time. Total is
+# ~30MB, well within normal git limits. Re-run the src/ pipeline and commit
+# the refreshed files whenever the underlying OEWS data changes.
