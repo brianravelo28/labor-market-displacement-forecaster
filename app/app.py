@@ -21,6 +21,11 @@ DATA_PATH = PROCESSED_DIR / "oews_occupation_features.csv"
 INDUSTRY_DATA_PATH = PROCESSED_DIR / "oews_industry_features.csv"
 MODEL_PATH = PROCESSED_DIR / "employment_forecast_model.txt"
 
+# Below this, an occupation's employment count within a single industry
+# sector is small enough that YoY % swings are dominated by OEWS sampling
+# noise rather than a real trend -- see the ranking note in update_sector_tab.
+SECTOR_RANKING_MIN_EMPLOYMENT = 500
+
 # Must match src/train_model.py exactly (feature order/dtypes affect a saved
 # LightGBM booster's categorical split lookups).
 MODEL_FEATURE_COLS = [
@@ -399,9 +404,20 @@ if industry_df is not None:
             margin=dict(t=50),
         )
 
+        # Occupation x industry-sector cells get very sparse for uncommon
+        # combos (e.g. a handful of in-house corporate trainers at a
+        # manufacturer, reported as "Self-Enrichment Teachers" under NAICS
+        # Manufacturing). At n=130 a swing of a few employees reads as a
+        # 40%+ move and dominates the top-movers ranking with entries that
+        # look nonsensical for the sector, even though the underlying BLS
+        # data is genuine. The scatter above still shows every occupation
+        # (small ones are naturally de-emphasized by bubble size), but the
+        # ranked tables below apply a floor so they highlight real,
+        # statistically meaningful movements instead of sampling noise.
+        ranked = sub[sub["employment_level"] >= SECTOR_RANKING_MIN_EMPLOYMENT]
         cols = ["occ_title", "employment_level", "employment_change_yoy_pct"]
-        top_risk = sub.nsmallest(10, "employment_change_yoy_pct")[cols]
-        top_growth = sub.nlargest(10, "employment_change_yoy_pct")[cols]
+        top_risk = ranked.nsmallest(10, "employment_change_yoy_pct")[cols]
+        top_growth = ranked.nlargest(10, "employment_change_yoy_pct")[cols]
 
         return scatter_fig, risk_table(top_risk), risk_table(top_growth)
 
