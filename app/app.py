@@ -145,6 +145,14 @@ else:
     )
 
 SLIDER_MARKS = lambda lo, hi, step: {i: f"{i}%" for i in range(lo, hi + 1, step)}
+# dcc.Slider centers each mark's label on its tick position, so the leftmost
+# mark (e.g. "-20%") has its label centered right at the track's start --
+# roughly half the text, including the leading minus sign, renders to the
+# left of the slider's own box and gets clipped with no room to spare.
+# Padding the slider inside its own wrapper (rather than relying on Dash's
+# internal slider CSS class names, which could change) gives that overflow
+# somewhere real to go.
+SLIDER_WRAPPER_STYLE = {"padding": "0 24px"}
 
 tab4_content = html.Div(
     children=[
@@ -173,15 +181,24 @@ tab4_content = html.Div(
             children=[
                 html.Div([
                     html.Label("Economic contraction severity (GDP growth impact)"),
-                    dcc.Slider(id="gdp-slider", min=-20, max=5, step=1, value=0, marks=SLIDER_MARKS(-20, 5, 5)),
+                    html.Div(
+                        dcc.Slider(id="gdp-slider", min=-20, max=5, step=1, value=0, marks=SLIDER_MARKS(-20, 5, 5)),
+                        style=SLIDER_WRAPPER_STYLE,
+                    ),
                 ]),
                 html.Div([
                     html.Label("Automation impact (additional employment headwind)"),
-                    dcc.Slider(id="automation-slider", min=0, max=20, step=1, value=0, marks=SLIDER_MARKS(0, 20, 5)),
+                    html.Div(
+                        dcc.Slider(id="automation-slider", min=0, max=20, step=1, value=0, marks=SLIDER_MARKS(0, 20, 5)),
+                        style=SLIDER_WRAPPER_STYLE,
+                    ),
                 ]),
                 html.Div([
                     html.Label("Immigration policy effect (labor supply adjustment)"),
-                    dcc.Slider(id="immigration-slider", min=-10, max=10, step=1, value=0, marks=SLIDER_MARKS(-10, 10, 5)),
+                    html.Div(
+                        dcc.Slider(id="immigration-slider", min=-10, max=10, step=1, value=0, marks=SLIDER_MARKS(-10, 10, 5)),
+                        style=SLIDER_WRAPPER_STYLE,
+                    ),
                 ]),
             ],
         ),
