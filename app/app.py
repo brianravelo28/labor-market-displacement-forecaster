@@ -41,6 +41,20 @@ MODEL_FEATURE_COLS = [
     "occ_major_group",
 ]
 
+# Standing convention across Brian's dashboards: every interactive chart hides
+# the mode bar and gets this hint instead, since displayModeBar=False makes
+# drag-to-zoom/double-click-reset/legend-click otherwise undiscoverable.
+CHART_HINT_TEXT = (
+    "Drag to zoom into part of the chart; double-click the chart to reset the view. "
+    "Click a legend entry to hide that series; double-click it to isolate it."
+)
+NO_MODEBAR = {"displayModeBar": False}
+
+
+def chart_hint():
+    return html.P(CHART_HINT_TEXT, style={"margin": "4px 2px 16px", "color": "#999", "fontSize": "12px", "fontStyle": "italic"})
+
+
 df = pd.read_csv(DATA_PATH)
 # Industry-sector extraction (Tab 3) re-parses the same large archives on a
 # separate schedule and may not have finished yet -- degrade gracefully.
@@ -79,8 +93,10 @@ tab1_content = html.Div(
             ],
         ),
         html.Div(id="kpi-row", style={"display": "flex", "gap": "16px", "marginBottom": "24px"}),
-        dcc.Graph(id="employment-chart"),
-        dcc.Graph(id="wage-chart"),
+        dcc.Graph(id="employment-chart", config=NO_MODEBAR),
+        chart_hint(),
+        dcc.Graph(id="wage-chart", config=NO_MODEBAR),
+        chart_hint(),
     ]
 )
 
@@ -128,7 +144,8 @@ if industry_df is not None:
                 value=DEFAULT_SECTOR,
                 style={"marginTop": "20px", "marginBottom": "16px", "maxWidth": "500px"},
             ),
-            dcc.Graph(id="sector-scatter"),
+            dcc.Graph(id="sector-scatter", config=NO_MODEBAR),
+            chart_hint(),
             html.Div(
                 style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px", "marginTop": "8px"},
                 children=[
@@ -203,7 +220,7 @@ tab4_content = html.Div(
             ],
         ),
         html.Div(id="scenario-kpi-row", style={"display": "flex", "gap": "16px", "margin": "24px 0"}),
-        dcc.Graph(id="scenario-chart"),
+        dcc.Graph(id="scenario-chart", config=NO_MODEBAR),
         html.P(id="scenario-summary", style={"fontStyle": "italic", "color": "#444"}),
     ]
 )
@@ -315,7 +332,12 @@ def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
             textposition="outside",
         )
     )
-    fig.update_layout(title=title, yaxis_title=yaxis_title, margin=dict(t=50), showlegend=False)
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13)),
+        yaxis_title=yaxis_title,
+        margin=dict(t=60, l=50, r=20),
+        showlegend=False,
+    )
     return fig
 
 
@@ -352,14 +374,14 @@ def update_regional_tab(_tab):
     wage_decline_fig = regional_bar(
         (us["wage_growth_yoy_pct"] < 0).mean() * 100,
         (fl["wage_growth_yoy_pct"] < 0).mean() * 100,
-        "Share of occupations with nominal wage decline (YoY)",
+        "Occupations with nominal wage decline (YoY)",
         "% of occupations",
         "{:.0f}%",
     )
     contraction_fig = regional_bar(
         (us["contraction_flag_12mo"] == 1).mean() * 100,
         (fl["contraction_flag_12mo"] == 1).mean() * 100,
-        "Share of occupations flagged as contracting (>2% YoY decline)",
+        "Contracting occupations (>2% YoY decline)",
         "% of occupations",
         "{:.0f}%",
     )
