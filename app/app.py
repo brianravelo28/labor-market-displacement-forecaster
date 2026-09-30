@@ -44,15 +44,14 @@ MODEL_FEATURE_COLS = [
 # Standing convention across Brian's dashboards: every interactive chart hides
 # the mode bar and gets this hint instead, since displayModeBar=False makes
 # drag-to-zoom/double-click-reset/legend-click otherwise undiscoverable.
-CHART_HINT_TEXT = (
-    "Drag to zoom into part of the chart; double-click the chart to reset the view. "
-    "Click a legend entry to hide that series; double-click it to isolate it."
-)
+CHART_HINT_BASE = "Drag to zoom into part of the chart; double-click the chart to reset the view."
+CHART_HINT_LEGEND_CLAUSE = " Click a legend entry to hide that series; double-click it to isolate it."
 NO_MODEBAR = {"displayModeBar": False}
 
 
-def chart_hint():
-    return html.P(CHART_HINT_TEXT, style={"margin": "4px 2px 16px", "color": "#999", "fontSize": "12px", "fontStyle": "italic"})
+def chart_hint(has_legend=False):
+    text = CHART_HINT_BASE + (CHART_HINT_LEGEND_CLAUSE if has_legend else "")
+    return html.P(text, style={"margin": "4px 2px 16px", "color": "#999", "fontSize": "12px", "fontStyle": "italic"})
 
 
 df = pd.read_csv(DATA_PATH)
