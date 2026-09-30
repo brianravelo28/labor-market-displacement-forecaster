@@ -106,7 +106,11 @@ tab2_content = html.Div(
         html.P(
             "Occupations present in both US and FL for the most recent year (2024). "
             "'Wage decline prevalence' is nominal (YoY), not inflation-adjusted -- real-wage "
-            "compression prevalence will replace it once CPI data lands.",
+            "compression prevalence will replace it once CPI data lands. The employment growth "
+            "chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
+            "is dominated by a handful of small occupations with extreme swings from OEWS sampling "
+            "noise -- see DATA_QUIRKS.md) -- FL's median sits near zero, but occupations underneath "
+            "it range widely.",
             style={"color": "#666"},
         ),
         html.Div(
@@ -341,6 +345,49 @@ def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
     return fig
 
 
+def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
+    # A median-only bar for this metric reads as broken when the FL median
+    # lands on exactly 0.0% (see DATA_QUIRKS.md) -- a single point estimate
+    # can't show that FL still has real dispersion. A first attempt used a
+    # box plot, but occupation-level YoY changes include a handful of small
+    # occupations with extreme OEWS-sampling-noise swings (down to -82%, up
+    # to +300%) -- full min/max whiskers stretched the axis so far that the
+    # actually-informative IQR collapsed into an unreadable sliver near zero.
+    # Error bars scoped to just the 25th-75th percentile sidestep that: the
+    # extreme tail never enters the range calculation at all, so the chart
+    # can't be dominated by it, while still visibly showing real spread
+    # around the median bar instead of a lonely flat number.
+    us_med, fl_med = us_vals.median(), fl_vals.median()
+    us_q1, us_q3 = us_vals.quantile(0.25), us_vals.quantile(0.75)
+    fl_q1, fl_q3 = fl_vals.quantile(0.25), fl_vals.quantile(0.75)
+    fig = go.Figure(
+        go.Bar(
+            x=["National (US)", "Florida"],
+            y=[us_med, fl_med],
+            marker_color=["#4a90d9", "#e07b39"],
+            text=[f"{us_med:+.1f}%", f"{fl_med:+.1f}%"],
+            textposition="outside",
+            error_y=dict(
+                type="data",
+                symmetric=False,
+                array=[us_q3 - us_med, fl_q3 - fl_med],
+                arrayminus=[us_med - us_q1, fl_med - fl_q1],
+                visible=True,
+                color="#555",
+                thickness=1.5,
+                width=6,
+            ),
+        )
+    )
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13)),
+        yaxis_title=yaxis_title,
+        margin=dict(t=60, l=50, r=20),
+        showlegend=False,
+    )
+    return fig
+
+
 @app.callback(
     Output("regional-employment-growth", "figure"),
     Output("regional-wage-level", "figure"),
@@ -357,12 +404,11 @@ def update_regional_tab(_tab):
     latest = latest[latest["occ_code"].isin(common_codes)]
     us, fl = latest[latest["region"] == "US"], latest[latest["region"] == "FL"]
 
-    emp_growth_fig = regional_bar(
-        us["employment_change_yoy_pct"].median(),
-        fl["employment_change_yoy_pct"].median(),
-        f"Median employment growth rate, {latest_year} (YoY)",
-        "%",
-        "{:+.1f}%",
+    emp_growth_fig = regional_bar_with_iqr(
+        us["employment_change_yoy_pct"].dropna(),
+        fl["employment_change_yoy_pct"].dropna(),
+        f"Employment growth rate, {latest_year} (median, IQR whiskers)",
+        "% change",
     )
     wage_level_fig = regional_bar(
         us["wage_annual_mean"].median(),
