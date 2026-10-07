@@ -23,9 +23,10 @@ DATA_PATH = PROCESSED_DIR / "oews_occupation_features.csv"
 INDUSTRY_DATA_PATH = PROCESSED_DIR / "oews_industry_features.csv"
 MODEL_PATH = PROCESSED_DIR / "employment_forecast_model.txt"
 
-# Below this, an occupation's employment count within a single industry
-# sector is small enough that YoY % swings are dominated by OEWS sampling
-# noise rather than a real trend -- see the ranking note in update_sector_tab.
+# Below this (in either the current or the prior year), an occupation's
+# employment count within a single industry sector is small enough that YoY %
+# swings are dominated by OEWS sampling noise rather than a real trend -- see
+# the ranking note in update_sector_tab.
 SECTOR_RANKING_MIN_EMPLOYMENT = 500
 
 # Must match src/train_model.py exactly (feature order/dtypes affect a saved
@@ -111,8 +112,7 @@ tab2_content = html.Div(
             "compression prevalence will replace it once CPI data lands. The employment growth "
             "chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
             "is dominated by a handful of small occupations with extreme swings from OEWS sampling "
-            "noise -- see DATA_QUIRKS.md) -- FL's median sits near zero, but occupations underneath "
-            "it range widely.",
+            "noise) -- FL's median sits near zero, but occupations underneath it range widely.",
             style={"color": "#666"},
         ),
         html.Div(
@@ -349,7 +349,8 @@ def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
 
 def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
     # A median-only bar for this metric reads as broken when the FL median
-    # lands on exactly 0.0% (see DATA_QUIRKS.md) -- a single point estimate
+    # lands on exactly 0.0% (13 of 744 FL occupations have identical
+    # employment in consecutive releases) -- a single point estimate
     # can't show that FL still has real dispersion. A first attempt used a
     # box plot, but occupation-level YoY changes include a handful of small
     # occupations with extreme OEWS-sampling-noise swings (down to -82%, up
@@ -501,7 +502,15 @@ if industry_df is not None:
         # (small ones are naturally de-emphasized by bubble size), but the
         # ranked tables below apply a floor so they highlight real,
         # statistically meaningful movements instead of sampling noise.
-        ranked = sub[sub["employment_level"] >= SECTOR_RANKING_MIN_EMPLOYMENT]
+        # The floor applies to BOTH years being compared: a floor on the
+        # current year alone lets a jump from a tiny base (120 -> 960
+        # employees, +700%) straight through. The prior-year count is
+        # recovered exactly from the YoY percentage.
+        prior_employment = (sub["employment_level"] / (1 + sub["employment_change_yoy_pct"] / 100)).round()
+        ranked = sub[
+            (sub["employment_level"] >= SECTOR_RANKING_MIN_EMPLOYMENT)
+            & (prior_employment >= SECTOR_RANKING_MIN_EMPLOYMENT)
+        ]
         cols = ["occ_title", "employment_level", "employment_change_yoy_pct"]
         top_risk = ranked.nsmallest(10, "employment_change_yoy_pct")[cols]
         top_growth = ranked.nlargest(10, "employment_change_yoy_pct")[cols]

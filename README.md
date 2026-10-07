@@ -18,7 +18,6 @@ Which jobs are shrinking, and which are quietly losing purchasing power even whi
 - 🐛 **A real bug found and fixed mid-build**: an earlier model version mispredicted the largest US occupation by ~60%, even on training data — see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#model) for the root cause and fix (predicting growth rate instead of absolute employment level)
 - 🗺️ **Unexpected finding**: Florida pays less than the national figure, not more. Compared head-to-head on the same occupation, Florida's median mean annual wage is ~7% lower (84% of 778 comparable occupations pay less in FL); the Regional Comparison tab's ~9% is the gap between the two *medians across occupations*. All nominal — not cost-of-living adjusted — contrary to the +3–8% regional premium the original project brief assumed. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#florida-vs-national-wages).
 - 🏭 **Industry-sector breakdown**: 20 NAICS sectors (~430 occupations per sector on average), 83,577 occupation × sector × year rows, national level
-- 🔎 **[DATA_QUIRKS.md](DATA_QUIRKS.md)** catalogs the data surprises hit along the way (schema drift across BLS releases, a silently-empty API result, estimates carried forward unchanged, and more), each with how it was found and what it would have broken
 
 ## Quick Start
 
@@ -75,7 +74,7 @@ jupyter notebook notebooks/
 |---|---|
 | **Occupation Search & Risk** | Search any occupation, see employment/wage history, YoY trend, and a contraction flag (employment down >2% YoY), US or FL. A full displacement *risk score* is not implemented yet — see [Status & Limitations](#status--limitations). |
 | **Regional Comparison** | US vs. Florida: employment growth (median with 25th–75th percentile whiskers, since a median-only bar hid how much occupations actually vary), median wage level, and the share of occupations with wage decline or contraction |
-| **Industry & Sector Analysis** | Pick a NAICS sector, see a wage-growth-vs-employment-change scatter and top movers. Occupations under 500 employees within a sector are excluded from the ranked tables (sampling noise), though still shown in the scatter |
+| **Industry & Sector Analysis** | Pick a NAICS sector, see a wage-growth-vs-employment-change scatter and top movers. Occupations under 500 employees within a sector — in either year compared — are excluded from the ranked tables (sampling noise), though still shown in the scatter |
 | **Predictive Scenarios** | GDP contraction / automation / immigration sliders applied to the trained model's forecast, with documented linear-assumption transparency (no macro elasticity model exists here — treat as directional) |
 
 A 5th tab (Fairness & Equity audit) is **not built** — the original plan's approach of inferring gender/age from job-posting text is methodologically weak, and this build has no job-postings data source at all. Needs a sounder methodology before implementation.
@@ -104,7 +103,6 @@ No environment variables or secrets are required — the dashboard reads only th
 ```
 labor-market-displacement-forecaster/
 ├── README.md              # this file
-├── DATA_QUIRKS.md         # data surprises found along the way, with how each was verified
 ├── requirements.txt        # runtime deps (what Render installs)
 ├── requirements-dev.txt    # + jupyter/matplotlib for notebooks
 ├── Procfile                 # gunicorn start command
@@ -133,7 +131,7 @@ Full citations and API documentation links: [docs/CITATIONS.md](docs/CITATIONS.m
 - **Done**: OEWS annual panel + engineered features, industry-sector breakdown, LightGBM employment forecaster (bug-fixed), dashboard Tabs 1–4 deployed on Render, 2 executed EDA/evaluation notebooks.
 - **Next — JOLTS and CPI integration**: a multi-day BLS API outage in August 2026 delayed these pulls; the API is reachable again, so what remains is running the fetch scripts, merging the results into the feature table, and retraining. That unlocks the real-wage compression flag and a fuller displacement risk score (today only a simplified growth-rate-based low/moderate/high threshold exists, used by the Predictive Scenarios tab).
 - **Not started**: Fairness/equity audit (Tab 5) — needs a methodology decision, not just more data.
-- **Known data-quality caveats**: occupations with employment in the tens/hundreds show large YoY % swings from OEWS sampling variance — the sector tab filters these out of its rankings, but the notebook's top-movers tables don't. Some BLS estimates are carried forward unchanged between releases (it's why Florida's median employment growth lands on exactly 0.0%). Details in [DATA_QUIRKS.md](DATA_QUIRKS.md) and [docs/METHODOLOGY.md](docs/METHODOLOGY.md#known-limitations).
+- **Known data-quality caveats**: occupations with employment in the tens/hundreds show large YoY % swings from OEWS sampling variance — the sector tab filters these out of its rankings, but the notebook's top-movers tables don't. Some BLS estimates are carried forward unchanged between releases (it's why Florida's median employment growth lands on exactly 0.0%). Details in [docs/METHODOLOGY.md](docs/METHODOLOGY.md#known-limitations).
 - **Cadence**: annual, not monthly (OEWS is a point-in-time annual survey; see methodology doc for why the original monthly-cadence plan didn't match reality).
 
 ## License
