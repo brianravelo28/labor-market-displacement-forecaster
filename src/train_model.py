@@ -1,6 +1,9 @@
 """
-LightGBM employment forecaster: predicts next-year employment_level per
-occupation x region from the current year's OEWS-derived features.
+LightGBM employment forecaster: forecasts next-year employment_level per
+occupation x region from the current year's OEWS-derived features. The
+model's target is the log growth ratio log(next / now), not the level
+itself; the level is reconstructed as now * exp(prediction) (see
+docs/METHODOLOGY.md#model for why).
 
 "12-months-ahead" in the original brief becomes "next annual release" here,
 since OEWS is annual (see README.md). Train/val/test split mirrors the
@@ -10,8 +13,8 @@ original 2015-2021 / 2022 / 2023-2024 intent, adapted to annual granularity:
   - test:  feature year 2022-2023 -> target is employment_level in year+1
 
 JOLTS (vacancy/separation rate) and CPI (real wage) features are not yet
-available (blocked on a BLS API outage) -- this model runs on OEWS-only
-features and will be retrained once those land.
+integrated -- this model runs on OEWS-only features and will be retrained
+once those are merged in.
 """
 import lightgbm as lgb
 import numpy as np

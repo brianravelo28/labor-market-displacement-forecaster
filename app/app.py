@@ -1,11 +1,13 @@
 """
 Occupation Displacement & Wage Compression Forecaster -- Dash app.
 
-Tab 1 (Occupation Search & Risk Dashboard) is implemented here. It runs on
-OEWS-derived features alone; real-wage and displacement-risk-score features
-that depend on CPI/JOLTS are added once those fetches complete (see
-src/fetch_cpi.py, src/fetch_jolts.py) -- until then the KPI cards and charts
-show nominal figures only, flagged as such in the UI.
+Four tabs: Occupation Search, Regional Comparison (US vs FL), Industry &
+Sector Analysis, and Predictive Scenarios. Everything runs on OEWS-derived
+features and the trained LightGBM model in data/processed/ alone. Real-wage
+and full displacement-risk-score features depend on CPI/JOLTS data that
+isn't integrated yet (fetch scripts: data/fetch_cpi.py, data/fetch_jolts.py),
+so the KPI cards and charts show nominal figures only, flagged as such in
+the UI.
 """
 from pathlib import Path
 
@@ -41,9 +43,10 @@ MODEL_FEATURE_COLS = [
     "occ_major_group",
 ]
 
-# Standing convention across Brian's dashboards: every interactive chart hides
-# the mode bar and gets this hint instead, since displayModeBar=False makes
-# drag-to-zoom/double-click-reset/legend-click otherwise undiscoverable.
+# Interactive charts hide the mode bar and get a hint line instead, since
+# displayModeBar=False makes drag-to-zoom/double-click-reset/legend-click
+# otherwise undiscoverable. The legend sentence is only added for charts that
+# actually have a legend (none of the current ones do).
 CHART_HINT_BASE = "Drag to zoom into part of the chart; double-click the chart to reset the view."
 CHART_HINT_LEGEND_CLAUSE = " Click a legend entry to hide that series; double-click it to isolate it."
 NO_MODEBAR = {"displayModeBar": False}
