@@ -1,5 +1,7 @@
 # Occupation Displacement & Wage Compression Forecaster
 
+![Occupation Displacement Forecaster dashboard](docs/screenshot.png)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Dash](https://img.shields.io/badge/dashboard-Plotly%20Dash-blue.svg)](https://dash.plotly.com/)
