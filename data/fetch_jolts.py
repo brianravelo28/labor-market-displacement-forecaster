@@ -22,6 +22,7 @@ import hashlib
 import json
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -39,8 +40,9 @@ from config import (
 )
 
 START_YEAR = 2015
-END_YEAR = 2024
+END_YEAR = date.today().year
 BATCH_SIZE = 25  # unregistered BLS API v2 limit: 25 series per query, 25 queries/day
+WINDOW_YEARS = 10  # ...and at most 10 years per query, so 2015-2026 takes two windows
 REGIONS = {"US": "00", "FL": FL_STATE_FIPS}
 
 
@@ -88,14 +90,28 @@ def fetch_batch(series_ids, start_year=START_YEAR, end_year=END_YEAR):
     if data["status"] not in ("REQUEST_SUCCEEDED", "REQUEST_SUCCEEDED_MESSAGES"):
         raise RuntimeError(f"BLS API error: {data.get('message')}")
 
-    # The API reports unknown series as "success" with an empty data list, so
-    # check for that explicitly instead of trusting the status field.
+    # Cache before validating, so a bad series ID costs one query, not one per rerun.
+    cache_file.write_text(json.dumps(data))
+    return data
+
+
+def check_no_empty_series(data):
+    """The API reports unknown series as "success" with an empty data list, so
+    check for that explicitly instead of trusting the status field."""
     empty = [s["seriesID"] for s in data["Results"]["series"] if not s["data"]]
     if empty:
         raise RuntimeError(f"BLS returned no data for {len(empty)} series (first: {empty[0]}); messages: {data.get('message')}")
 
-    cache_file.write_text(json.dumps(data))
-    return data
+
+def fetch_windows(series_ids, start_year=START_YEAR, end_year=END_YEAR):
+    """fetch_batch over consecutive <=10-year windows; returns {series_id: [data points]}."""
+    points = {sid: [] for sid in series_ids}
+    for w_start in range(start_year, end_year + 1, WINDOW_YEARS):
+        data = fetch_batch(series_ids, w_start, min(w_start + WINDOW_YEARS - 1, end_year))
+        check_no_empty_series(data)
+        for series in data["Results"]["series"]:
+            points[series["seriesID"]].extend(series["data"])
+    return points
 
 
 def build_panel() -> pd.DataFrame:
@@ -106,11 +122,10 @@ def build_panel() -> pd.DataFrame:
     for i in range(0, len(all_ids), BATCH_SIZE):
         batch = all_ids[i : i + BATCH_SIZE]
         print(f"Fetching JOLTS series {i + 1}-{i + len(batch)} of {len(all_ids)} ...")
-        data = fetch_batch(batch)
-        for series in data["Results"]["series"]:
-            sid = series["seriesID"]
+        fetched = fetch_windows(batch)
+        for sid, series_data in fetched.items():
             info = meta[sid]
-            for point in series["data"]:
+            for point in series_data:
                 if point["period"] == "M13":  # annual average, skip
                     continue
                 value = point["value"]

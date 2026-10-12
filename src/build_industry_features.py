@@ -8,6 +8,7 @@ consecutive OEWS annual releases, not a rolling 12-month window.
 import pandas as pd
 
 from build_features import lagged_values
+from build_macro_features import add_real_wage_features, add_sector_jolts
 from config import DATA_PROCESSED
 
 CONTRACTION_THRESHOLD_PCT = -2.0
@@ -35,7 +36,7 @@ def add_growth_features(df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     panel = load_panel()
-    featured = add_growth_features(panel)
+    featured = add_real_wage_features(add_sector_jolts(add_growth_features(panel)))
     out_path = DATA_PROCESSED / "oews_industry_features.csv"
     featured.to_csv(out_path, index=False)
     print(f"Saved {len(featured):,} rows to {out_path}")

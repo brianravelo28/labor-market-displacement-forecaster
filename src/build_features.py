@@ -7,10 +7,9 @@ against the release exactly 5 years prior when that occupation code is
 present in both years (SOC code revisions mean not every occupation has a
 continuous multi-year history under the same code).
 
-JOLTS-derived (vacancy/separation rate) and CPI-derived (inflation-adjusted
-wage) features are added in a later merge step once those fetches complete --
-they're independent of this script and not required to compute the
-employment/wage growth features here.
+When run as a script, the CPI-derived (inflation-adjusted wage) and
+JOLTS-derived (job-market tightness) columns from build_macro_features.py are
+merged in after the growth features are computed.
 """
 import pandas as pd
 
@@ -61,8 +60,13 @@ def add_growth_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    from build_macro_features import add_occupation_jolts, add_real_wage_features
+
     panel = load_panel()
     featured = add_growth_features(panel)
+    featured = add_real_wage_features(featured)
+    industry_panel = pd.read_csv(DATA_PROCESSED / "oews_industry_panel.csv", dtype={"naics": str})
+    featured = add_occupation_jolts(featured, industry_panel)
     out_path = DATA_PROCESSED / "oews_occupation_features.csv"
     featured.to_csv(out_path, index=False)
     print(f"Saved {len(featured):,} rows to {out_path}")

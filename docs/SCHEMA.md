@@ -2,7 +2,7 @@
 
 All processed files live in `data/processed/` and are **committed to the repo** so the deployed dashboard can run without re-downloading from BLS (the raw `data/raw/` archives are the git-ignored part). Regenerate them via the scripts in `data/` and `src/` — pipeline order is in the [README](../README.md#rebuild-everything-from-raw-bls-data-optional).
 
-Not yet produced (scripts written, never completed/merged): `jolts_industry_panel.csv` (`data/fetch_jolts.py`) and `cpi_monthly.csv` (`data/fetch_cpi.py`).
+Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below) and `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)).
 
 ## `oews_occupation_panel.csv`
 
@@ -40,6 +40,28 @@ Source: `data/fetch_oews.py`, parsing BLS's annual `oesm{YY}all.zip` archives. R
 
 The lags are matched on the actual prior year (year − 1, year − 5), not the previous row, so an occupation missing a year gets a blank rather than a change that silently spans several years.
 
+Added by `src/build_macro_features.py` (CPI and JOLTS; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)):
+
+| Column | Type | Description |
+|---|---|---|
+| `wage_annual_mean_real` | float | `wage_annual_mean` in latest-release-year (2025) dollars, deflated with May CPI-U |
+| `real_wage_growth_yoy_pct` | float | YoY change in the real wage (%); null wherever `wage_growth_yoy_pct` is null |
+| `purchasing_power_loss_flag` | Int64 (nullable) | 1 if the nominal wage rose but the real wage fell, else 0 |
+| `jolts_exposure_openings_rate` | float | Job openings rate (%), annual average, of the occupation's industries weighted by its national employment in each sector; Florida rows use the same national industry rates |
+| `jolts_exposure_quits_rate` | float | Same, quits rate |
+| `jolts_exposure_layoffs_rate` | float | Same, layoffs and discharges rate |
+| `jolts_region_openings_rate` | float | Total-nonfarm job openings rate for the row's own region (US, or Florida) |
+
+JOLTS columns are null for the 20 rows whose occupation has no employment in any JOLTS-covered sector.
+
+## `jolts_industry_panel.csv`
+
+Monthly JOLTS rates (11,860 rows), from `data/fetch_jolts.py`: `year`, `month`, `region` (`US` or `FL`), `industry_code` (JOLTS industry code; string), `industry_name`, `data_element` (job openings, hires, total separations, quits, or layoffs and discharges rate) and `rate` (%). US has 16 industries, January 2015 to August 2026; Florida has total nonfarm only (`000000`), January 2015 to December 2025. Seasonally adjusted.
+
+## `cpi_monthly.csv`
+
+Monthly CPI-U, all items, US city average, not seasonally adjusted (series `CUUR0000SA0`): `year`, `month`, `cpi`, and `cpi_index_2020base` (2020 annual average = 100). 139 rows, January 2015 to August 2026, with no October 2025 value.
+
 ## `oews_industry_panel.csv` / `oews_industry_features.csv`
 
 Same structure as above, but national-level only, broken out by industry sector instead of collapsed to cross-industry. Adds:
@@ -48,6 +70,8 @@ Same structure as above, but national-level only, broken out by industry sector 
 |---|---|---|
 | `naics` | str | 2-digit/range NAICS sector code, e.g. `62`, `44-45` |
 | `naics_title` | str | Sector name, e.g. "Health Care and Social Assistance" |
+
+The features file also has `wage_annual_mean_real`, `real_wage_growth_yoy_pct` and `purchasing_power_loss_flag` (same definitions as above) and `jolts_openings_rate`, `jolts_quits_rate` and `jolts_layoffs_rate`: the national annual-average JOLTS rates for the sector's closest JOLTS industry (null for sector `11`, agriculture, which JOLTS doesn't cover).
 
 92,104 rows: 20 sectors × 11 years, with 143–641 detailed occupations present per sector in 2025 (about 426 on average) — most occupations don't appear in most sectors, so this is far smaller than 20 × ~800 × 10. About 8,200–8,600 rows per year (8,527 in 2025). Sector titles aren't stable across releases: NAICS `99` (government) carries four different `naics_title` strings across the 11 years, so group on `naics`, not `naics_title` (the dashboard uses the most recent year's title). State-level industry breakdowns are excluded — OEWS suppresses too many state x sector x detailed-occupation cells to build a reliable Florida-specific version.
 

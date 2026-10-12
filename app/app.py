@@ -2,12 +2,12 @@
 Occupation Displacement & Wage Compression Forecaster -- Dash app.
 
 Four tabs: Occupation Search, Regional Comparison (US vs FL), Industry &
-Sector Analysis, and Predictive Scenarios. Everything runs on OEWS-derived
-features and the trained LightGBM model in data/processed/ alone. Real-wage
-and full displacement-risk-score features depend on CPI/JOLTS data that
-isn't integrated yet (fetch scripts: data/fetch_cpi.py, data/fetch_jolts.py),
-so the KPI cards and charts show nominal figures only, flagged as such in
-the UI.
+Sector Analysis, and Predictive Scenarios. Everything runs on the processed
+OEWS tables (with CPI-U inflation-adjusted wages and JOLTS job-market
+tightness merged in by src/build_macro_features.py) and the trained LightGBM
+model in data/processed/. The forecaster itself uses neither CPI nor JOLTS:
+tested as inputs, they did not improve out-of-sample accuracy (see
+src/feature_set_experiment.py and docs/METHODOLOGY.md).
 """
 import json
 from pathlib import Path
@@ -79,7 +79,8 @@ def _baseline_accuracy_note():
         f"seen, it was closer than simply assuming no change for {m['closer_than_persistence']:.0%} of occupations, "
         f"with a median error of {m['median_ape']:.1f}% vs. {p['median_ape']:.1f}% for assuming no change. That edge "
         f"is small and not statistically clear-cut, and the risk label is only a threshold on the forecast "
-        f"(below -2% = moderate, below -10% = high)."
+        f"(below -2% = moderate, below -10% = high). CPI and JOLTS data were tested as forecasting inputs "
+        f"and did not improve accuracy on earlier years, so the forecast does not use them."
     )
 
 
@@ -116,11 +117,11 @@ tab1_content = html.Div(
                 ),
             ],
         ),
-        html.Div(id="kpi-row", style={"display": "flex", "gap": "16px", "marginBottom": "24px"}),
+        html.Div(id="kpi-row", style={"display": "grid", "gridTemplateColumns": "repeat(auto-fit, minmax(132px, 1fr))", "gap": "16px", "marginBottom": "24px"}),
         dcc.Graph(id="employment-chart", config=NO_MODEBAR),
         chart_hint(),
         dcc.Graph(id="wage-chart", config=NO_MODEBAR),
-        chart_hint(),
+        chart_hint(has_legend=True),
     ]
 )
 
@@ -129,9 +130,9 @@ tab2_content = html.Div(
     children=[
         html.P(
             f"Occupations present in both US and FL for the most recent year ({LATEST_YEAR}). "
-            "'Wage decline prevalence' is nominal (YoY), not inflation-adjusted -- real-wage "
-            "compression prevalence will replace it once CPI data lands. The employment growth "
-            "chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
+            "'Real' wage changes are deflated with the national CPI-U (May to May), so both regions "
+            "get the same inflation rate; the job openings rate is each region's JOLTS total nonfarm "
+            "series. The employment growth chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
             "is dominated by a handful of small occupations with extreme swings from OEWS sampling "
             "noise) -- FL's median sits near zero, but occupations underneath it range widely.",
             style={"color": "#666"},
@@ -142,7 +143,9 @@ tab2_content = html.Div(
                 dcc.Graph(id="regional-employment-growth"),
                 dcc.Graph(id="regional-wage-level"),
                 dcc.Graph(id="regional-wage-decline-prevalence"),
+                dcc.Graph(id="regional-real-wage-decline-prevalence"),
                 dcc.Graph(id="regional-contraction-prevalence"),
+                dcc.Graph(id="regional-job-openings"),
             ],
         ),
     ],
@@ -171,6 +174,7 @@ if industry_df is not None:
                 value=DEFAULT_SECTOR,
                 style={"marginTop": "20px", "marginBottom": "16px", "maxWidth": "500px"},
             ),
+            html.Div(id="sector-jolts-row", style={"display": "flex", "flexWrap": "wrap", "gap": "16px", "marginBottom": "16px"}),
             dcc.Graph(id="sector-scatter", config=NO_MODEBAR),
             chart_hint(),
             html.Div(
@@ -258,8 +262,8 @@ app.layout = html.Div(
     children=[
         html.H1("Occupation Displacement & Wage Compression Forecaster", style={"marginBottom": "4px"}),
         html.P(
-            f"BLS OEWS data, {FIRST_YEAR}-{LATEST_YEAR} (annual). Real-wage and displacement-risk "
-            "scoring pending CPI/JOLTS integration.",
+            f"BLS OEWS data, {FIRST_YEAR}-{LATEST_YEAR} (annual), with CPI-U inflation adjustment and "
+            "JOLTS job-market tightness.",
             style={"color": "#666", "marginTop": 0},
         ),
         dcc.Tabs(
@@ -279,15 +283,15 @@ app.layout = html.Div(
 def kpi_card(label, value, sub=None, color="#222"):
     return html.Div(
         style={
-            "flex": "1",
+            "flex": "1 1 120px",
             "border": "1px solid #e0e0e0",
             "borderRadius": "8px",
-            "padding": "14px 16px",
+            "padding": "14px 12px",
             "background": "#fafafa",
         },
         children=[
             html.Div(label, style={"fontSize": "13px", "color": "#777"}),
-            html.Div(value, style={"fontSize": "24px", "fontWeight": "600", "color": color}),
+            html.Div(value, style={"fontSize": "22px", "fontWeight": "600", "color": color}),
             html.Div(sub or "", style={"fontSize": "12px", "color": "#999"}),
         ],
     )
@@ -312,6 +316,7 @@ def update_dashboard(occ_code, region):
 
     emp_growth = latest["employment_change_yoy_pct"]
     wage_growth = latest["wage_growth_yoy_pct"]
+    real_wage_growth = latest["real_wage_growth_yoy_pct"]
     contraction = latest["contraction_flag_12mo"]
 
     kpis = [
@@ -321,17 +326,30 @@ def update_dashboard(occ_code, region):
             f"{emp_growth:+.1f}%" if pd.notna(emp_growth) else "n/a",
             color="#c0392b" if pd.notna(emp_growth) and emp_growth < 0 else "#27ae60",
         ),
-        kpi_card("Wage (annual mean)", f"${latest['wage_annual_mean']:,.0f}", "nominal, not inflation-adjusted"),
+        kpi_card("Mean wage", f"${latest['wage_annual_mean']:,.0f}", "annual, nominal"),
         kpi_card(
-            "Wage YoY",
+            "Wage YoY (nominal)",
             f"{wage_growth:+.1f}%" if pd.notna(wage_growth) else "n/a",
             color="#c0392b" if pd.notna(wage_growth) and wage_growth < 0 else "#27ae60",
+        ),
+        kpi_card(
+            "Real wage YoY",
+            f"{real_wage_growth:+.1f}%" if pd.notna(real_wage_growth) else "n/a",
+            "after CPI-U inflation",
+            color="#c0392b" if pd.notna(real_wage_growth) and real_wage_growth < 0 else "#27ae60",
         ),
         kpi_card(
             "Contraction flag",
             "YES" if contraction == 1 else "no",
             "employment down >2% YoY",
             color="#c0392b" if contraction == 1 else "#27ae60",
+        ),
+        kpi_card(
+            "Job openings rate",
+            f"{latest['jolts_exposure_openings_rate']:.1f}%" if pd.notna(latest["jolts_exposure_openings_rate"]) else "n/a",
+            (f"JOLTS, {int(latest['year'])}: quits {latest['jolts_exposure_quits_rate']:.1f}%, "
+             f"layoffs {latest['jolts_exposure_layoffs_rate']:.1f}%")
+            if pd.notna(latest["jolts_exposure_openings_rate"]) else "",
         ),
     ]
 
@@ -340,14 +358,21 @@ def update_dashboard(occ_code, region):
     emp_fig.update_layout(title=f"Employment history — {occ_title} ({region})", yaxis_title="Employment", margin=dict(t=50))
 
     wage_fig = go.Figure()
-    wage_fig.add_trace(go.Scatter(x=sub["year"], y=sub["wage_annual_mean"], mode="lines+markers", name="Nominal annual mean wage"))
+    wage_fig.add_trace(go.Scatter(x=sub["year"], y=sub["wage_annual_mean"], mode="lines+markers", name="Nominal"))
+    wage_fig.add_trace(go.Scatter(x=sub["year"], y=sub["wage_annual_mean_real"], mode="lines+markers", name=f"Real ({LATEST_YEAR} dollars)"))
     wage_fig.update_layout(
-        title=f"Wage history (nominal) — {occ_title} ({region})",
+        title=f"Annual mean wage, nominal vs. inflation-adjusted — {occ_title} ({region})",
         yaxis_title="Annual mean wage ($)",
-        margin=dict(t=50),
+        margin=dict(t=70),
+        legend=dict(orientation="h", y=1.08, x=0),
     )
 
     return kpis, emp_fig, wage_fig
+
+
+def share_negative(series):
+    """Percent of occupations with a negative value, among those that have one."""
+    return (series.dropna() < 0).mean() * 100
 
 
 def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
@@ -417,7 +442,9 @@ def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
     Output("regional-employment-growth", "figure"),
     Output("regional-wage-level", "figure"),
     Output("regional-wage-decline-prevalence", "figure"),
+    Output("regional-real-wage-decline-prevalence", "figure"),
     Output("regional-contraction-prevalence", "figure"),
+    Output("regional-job-openings", "figure"),
     Input("main-tabs", "value"),
 )
 def update_regional_tab(_tab):
@@ -443,20 +470,34 @@ def update_regional_tab(_tab):
         "${:,.0f}",
     )
     wage_decline_fig = regional_bar(
-        (us["wage_growth_yoy_pct"] < 0).mean() * 100,
-        (fl["wage_growth_yoy_pct"] < 0).mean() * 100,
+        share_negative(us["wage_growth_yoy_pct"]),
+        share_negative(fl["wage_growth_yoy_pct"]),
         "Occupations with nominal wage decline (YoY)",
         "% of occupations",
         "{:.0f}%",
     )
+    real_wage_decline_fig = regional_bar(
+        share_negative(us["real_wage_growth_yoy_pct"]),
+        share_negative(fl["real_wage_growth_yoy_pct"]),
+        "Occupations with real wage decline (YoY, after CPI)",
+        "% of occupations",
+        "{:.0f}%",
+    )
     contraction_fig = regional_bar(
-        (us["contraction_flag_12mo"] == 1).mean() * 100,
-        (fl["contraction_flag_12mo"] == 1).mean() * 100,
+        (us["contraction_flag_12mo"].dropna() == 1).mean() * 100,
+        (fl["contraction_flag_12mo"].dropna() == 1).mean() * 100,
         "Contracting occupations (>2% YoY decline)",
         "% of occupations",
         "{:.0f}%",
     )
-    return emp_growth_fig, wage_level_fig, wage_decline_fig, contraction_fig
+    openings_fig = regional_bar(
+        us["jolts_region_openings_rate"].iloc[0],
+        fl["jolts_region_openings_rate"].iloc[0],
+        f"Job openings rate, {latest_year} (JOLTS total nonfarm, annual avg.)",
+        "% rate",
+        "{:.1f}%",
+    )
+    return emp_growth_fig, wage_level_fig, wage_decline_fig, real_wage_decline_fig, contraction_fig, openings_fig
 
 
 def risk_table(rows):
@@ -474,9 +515,24 @@ def risk_table(rows):
     )
 
 
+def sector_jolts_cards(naics_code, year):
+    """JOLTS rates for the sector's closest industry (national; annual average)."""
+    row = industry_df[(industry_df["naics"] == naics_code) & (industry_df["year"] == year)]
+    row = row.dropna(subset=["jolts_openings_rate"])
+    if row.empty:
+        return [html.P("JOLTS covers nonfarm industries only, so it has no series for this sector.", style={"color": "#999", "fontSize": "13px"})]
+    r = row.iloc[0]
+    return [
+        kpi_card("Job openings rate", f"{r['jolts_openings_rate']:.1f}%", f"JOLTS, {year} average"),
+        kpi_card("Quits rate", f"{r['jolts_quits_rate']:.1f}%", f"JOLTS, {year} average"),
+        kpi_card("Layoffs & discharges rate", f"{r['jolts_layoffs_rate']:.1f}%", f"JOLTS, {year} average"),
+    ]
+
+
 if industry_df is not None:
 
     @app.callback(
+        Output("sector-jolts-row", "children"),
         Output("sector-scatter", "figure"),
         Output("sector-top-risk", "children"),
         Output("sector-top-growth", "children"),
@@ -537,7 +593,7 @@ if industry_df is not None:
         top_risk = ranked.nsmallest(10, "employment_change_yoy_pct")[cols]
         top_growth = ranked.nlargest(10, "employment_change_yoy_pct")[cols]
 
-        return scatter_fig, risk_table(top_risk), risk_table(top_growth)
+        return sector_jolts_cards(naics_code, latest_year), scatter_fig, risk_table(top_risk), risk_table(top_growth)
 
 
 # Illustrative assumption, not a fitted causal elasticity: a 10-point GDP

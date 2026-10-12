@@ -24,8 +24,9 @@ occupation until 2020, so using them silently discards every training pair
 before 2020 (the first version of this model trained on a single year because
 of that). They remain in oews_occupation_features.csv for description.
 
-JOLTS (vacancy/separation rate) and CPI (real wage) features are not yet
-integrated -- this model runs on OEWS-only features.
+JOLTS (job-market tightness) and CPI (real wage) features are in the feature
+table but are not model inputs: feature_set_experiment.py found they did not
+improve the walk-forward results, so this model runs on OEWS-only features.
 """
 import itertools
 import json

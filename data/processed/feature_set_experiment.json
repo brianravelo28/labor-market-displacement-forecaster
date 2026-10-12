@@ -1,0 +1,165 @@
+{
+  "pairs": 12921,
+  "inner_fold_years": [
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "candidates": {
+    "A baseline (shipped)": {
+      "features": [
+        "employment_level",
+        "wage_annual_mean",
+        "wage_annual_median",
+        "employment_change_yoy_pct",
+        "wage_growth_yoy_pct",
+        "contraction_flag_12mo",
+        "region",
+        "occ_major_group"
+      ],
+      "selected_params": {
+        "objective": "l1",
+        "n_estimators": 75,
+        "num_leaves": 31,
+        "min_data_in_leaf": 100
+      },
+      "mean_median_error_pct": 7.6427382133802055,
+      "mean_rmse": 17815.828264006122,
+      "persistence_mean_median_error_pct": 7.963900193644006,
+      "persistence_mean_rmse": 20130.486492719676,
+      "per_fold_median_error_pct": {
+        "2020": 9.501254311831845,
+        "2021": 8.579049554653931,
+        "2022": 6.258938924420952,
+        "2023": 6.231710062614091
+      }
+    },
+    "B + real wage growth": {
+      "features": [
+        "employment_level",
+        "wage_annual_mean",
+        "wage_annual_median",
+        "employment_change_yoy_pct",
+        "wage_growth_yoy_pct",
+        "contraction_flag_12mo",
+        "region",
+        "occ_major_group",
+        "real_wage_growth_yoy_pct"
+      ],
+      "selected_params": {
+        "objective": "l1",
+        "n_estimators": 25,
+        "num_leaves": 31,
+        "min_data_in_leaf": 20
+      },
+      "mean_median_error_pct": 7.670333029392177,
+      "mean_rmse": 17831.42869622324,
+      "persistence_mean_median_error_pct": 7.963900193644006,
+      "persistence_mean_rmse": 20130.486492719676,
+      "per_fold_median_error_pct": {
+        "2020": 9.445077001060422,
+        "2021": 8.334838601679643,
+        "2022": 6.468018353455737,
+        "2023": 6.433398161372908
+      }
+    },
+    "C + JOLTS levels": {
+      "features": [
+        "employment_level",
+        "wage_annual_mean",
+        "wage_annual_median",
+        "employment_change_yoy_pct",
+        "wage_growth_yoy_pct",
+        "contraction_flag_12mo",
+        "region",
+        "occ_major_group",
+        "jolts_exposure_openings_rate",
+        "jolts_exposure_quits_rate",
+        "jolts_exposure_layoffs_rate",
+        "jolts_region_openings_rate"
+      ],
+      "selected_params": {
+        "objective": "l2",
+        "n_estimators": 25,
+        "num_leaves": 8,
+        "min_data_in_leaf": 100
+      },
+      "mean_median_error_pct": 7.828905756248642,
+      "mean_rmse": 18048.43974347952,
+      "persistence_mean_median_error_pct": 7.963900193644006,
+      "persistence_mean_rmse": 20130.486492719676,
+      "per_fold_median_error_pct": {
+        "2020": 9.396303222083052,
+        "2021": 8.623427191128641,
+        "2022": 6.670224524113561,
+        "2023": 6.625668087669315
+      }
+    },
+    "E + JOLTS relative to year mean": {
+      "features": [
+        "employment_level",
+        "wage_annual_mean",
+        "wage_annual_median",
+        "employment_change_yoy_pct",
+        "wage_growth_yoy_pct",
+        "contraction_flag_12mo",
+        "region",
+        "occ_major_group",
+        "jolts_exposure_openings_rate_rel",
+        "jolts_exposure_quits_rate_rel",
+        "jolts_exposure_layoffs_rate_rel",
+        "jolts_region_openings_rate_rel"
+      ],
+      "selected_params": {
+        "objective": "l1",
+        "n_estimators": 25,
+        "num_leaves": 31,
+        "min_data_in_leaf": 20
+      },
+      "mean_median_error_pct": 7.695978176075539,
+      "mean_rmse": 18399.009103885495,
+      "persistence_mean_median_error_pct": 7.963900193644006,
+      "persistence_mean_rmse": 20130.486492719676,
+      "per_fold_median_error_pct": {
+        "2020": 9.5824550508095,
+        "2021": 8.571144372413485,
+        "2022": 6.186092028048159,
+        "2023": 6.444221253031015
+      }
+    },
+    "D + real wage + JOLTS relative": {
+      "features": [
+        "employment_level",
+        "wage_annual_mean",
+        "wage_annual_median",
+        "employment_change_yoy_pct",
+        "wage_growth_yoy_pct",
+        "contraction_flag_12mo",
+        "region",
+        "occ_major_group",
+        "real_wage_growth_yoy_pct",
+        "jolts_exposure_openings_rate_rel",
+        "jolts_exposure_quits_rate_rel",
+        "jolts_exposure_layoffs_rate_rel",
+        "jolts_region_openings_rate_rel"
+      ],
+      "selected_params": {
+        "objective": "l1",
+        "n_estimators": 25,
+        "num_leaves": 31,
+        "min_data_in_leaf": 100
+      },
+      "mean_median_error_pct": 7.6647496635685135,
+      "mean_rmse": 18524.580553774606,
+      "persistence_mean_median_error_pct": 7.963900193644006,
+      "persistence_mean_rmse": 20130.486492719676,
+      "per_fold_median_error_pct": {
+        "2020": 9.679851305582499,
+        "2021": 8.319326350728403,
+        "2022": 6.347161013290617,
+        "2023": 6.312659984672535
+      }
+    }
+  }
+}
