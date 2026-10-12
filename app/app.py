@@ -9,6 +9,7 @@ isn't integrated yet (fetch scripts: data/fetch_cpi.py, data/fetch_jolts.py),
 so the KPI cards and charts show nominal figures only, flagged as such in
 the UI.
 """
+import json
 from pathlib import Path
 
 import dash
@@ -37,8 +38,6 @@ MODEL_FEATURE_COLS = [
     "wage_annual_median",
     "employment_change_yoy_pct",
     "wage_growth_yoy_pct",
-    "employment_change_5yr_cagr",
-    "wage_growth_5yr_cagr",
     "contraction_flag_12mo",
     "region",
     "occ_major_group",
@@ -63,6 +62,28 @@ df = pd.read_csv(DATA_PATH)
 # separate schedule and may not have finished yet -- degrade gracefully.
 industry_df = pd.read_csv(INDUSTRY_DATA_PATH, dtype={"naics": str}) if INDUSTRY_DATA_PATH.exists() else None
 forecast_model = lgb.Booster(model_file=str(MODEL_PATH)) if MODEL_PATH.exists() else None
+FIRST_YEAR, LATEST_YEAR = int(df["year"].min()), int(df["year"].max())
+
+
+def _baseline_accuracy_note():
+    # Built from the committed training metrics so the claim can't drift from
+    # what train_model.py actually measured.
+    path = PROCESSED_DIR / "model_metrics.json"
+    try:
+        h = json.loads(path.read_text())["holdout"]
+        m, p = h["model"], h["persistence"]
+    except (OSError, KeyError, ValueError):
+        return "The baseline forecast is a statistical model; see the project README for how it was validated."
+    return (
+        f"How good is the baseline forecast? Tested on the {h['target_year']} data release, which the model had never "
+        f"seen, it was closer than simply assuming no change for {m['closer_than_persistence']:.0%} of occupations, "
+        f"with a median error of {m['median_ape']:.1f}% vs. {p['median_ape']:.1f}% for assuming no change. That edge "
+        f"is small and not statistically clear-cut, and the risk label is only a threshold on the forecast "
+        f"(below -2% = moderate, below -10% = high)."
+    )
+
+
+BASELINE_ACCURACY_NOTE = _baseline_accuracy_note()
 occ_options = (
     df[["occ_code", "occ_title"]]
     .drop_duplicates()
@@ -107,7 +128,7 @@ tab2_content = html.Div(
     style={"marginTop": "20px"},
     children=[
         html.P(
-            "Occupations present in both US and FL for the most recent year (2024). "
+            f"Occupations present in both US and FL for the most recent year ({LATEST_YEAR}). "
             "'Wage decline prevalence' is nominal (YoY), not inflation-adjusted -- real-wage "
             "compression prevalence will replace it once CPI data lands. The employment growth "
             "chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
@@ -186,6 +207,7 @@ tab4_content = html.Div(
             "exists here) -- treat results as directional, not precise.",
             style={"color": "#666", "marginTop": "20px"},
         ),
+        html.P(BASELINE_ACCURACY_NOTE, style={"color": "#666", "fontSize": "13px"}),
         dcc.Dropdown(
             id="scenario-occ-dropdown",
             options=[{"label": row.label, "value": row.occ_code} for row in occ_options.itertuples()],
@@ -236,7 +258,7 @@ app.layout = html.Div(
     children=[
         html.H1("Occupation Displacement & Wage Compression Forecaster", style={"marginBottom": "4px"}),
         html.P(
-            "BLS OEWS data, 2015-2024 (annual). Real-wage and displacement-risk "
+            f"BLS OEWS data, {FIRST_YEAR}-{LATEST_YEAR} (annual). Real-wage and displacement-risk "
             "scoring pending CPI/JOLTS integration.",
             style={"color": "#666", "marginTop": 0},
         ),
@@ -531,15 +553,15 @@ def predict_baseline(occ_code, region):
     if sub.empty or forecast_model is None:
         return None
     latest = sub.iloc[-1].copy()
+    # The model was trained only on rows with every input present, so a missing
+    # input (e.g. an occupation with no prior-year value) gets no forecast
+    # rather than an arbitrary one.
+    inputs = ["employment_level", "wage_annual_mean", "wage_annual_median",
+              "employment_change_yoy_pct", "wage_growth_yoy_pct", "contraction_flag_12mo"]
+    if latest[inputs].isna().any():
+        return None
     row = pd.DataFrame([{
-        "employment_level": latest["employment_level"],
-        "wage_annual_mean": latest["wage_annual_mean"],
-        "wage_annual_median": latest["wage_annual_median"],
-        "employment_change_yoy_pct": latest["employment_change_yoy_pct"],
-        "wage_growth_yoy_pct": latest["wage_growth_yoy_pct"],
-        "employment_change_5yr_cagr": latest["employment_change_5yr_cagr"],
-        "wage_growth_5yr_cagr": latest["wage_growth_5yr_cagr"],
-        "contraction_flag_12mo": int(latest["contraction_flag_12mo"]) if pd.notna(latest["contraction_flag_12mo"]) else 0,
+        **{c: float(latest[c]) for c in inputs},
         "region": str(region),
         "occ_major_group": str(occ_code)[:2],
     }])
@@ -548,6 +570,7 @@ def predict_baseline(occ_code, region):
     # Model predicts log growth ratio, not absolute level -- see src/train_model.py
     # for why (absolute-level regression badly mispredicts the handful of
     # multi-million-employee occupations, which are extremely sparse in training data).
+    # Its accuracy against a "no change" baseline is in data/processed/model_metrics.json.
     predicted_log_growth = float(forecast_model.predict(row[MODEL_FEATURE_COLS])[0])
     baseline_employment_next = float(latest["employment_level"] * np.exp(predicted_log_growth))
     baseline_growth_pct = (baseline_employment_next / latest["employment_level"] - 1) * 100
@@ -582,8 +605,11 @@ def update_scenario_tab(occ_code, region, gdp_pct, automation_pct, immigration_p
     baseline = predict_baseline(occ_code, region)
     if baseline is None:
         empty_fig = go.Figure()
-        empty_fig.update_layout(title="No data / model unavailable for this selection")
-        return [], empty_fig, "No data available."
+        empty_fig.update_layout(title="No forecast for this selection")
+        return [], empty_fig, (
+            "No forecast: this occupation/region needs employment and wage values for the latest "
+            "two consecutive years, and at least one is missing."
+        )
 
     scenario_growth_pct = (
         baseline["baseline_growth_pct"]
