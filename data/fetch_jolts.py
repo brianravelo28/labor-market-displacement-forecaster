@@ -1,6 +1,7 @@
 """
-Fetch monthly JOLTS (Job Openings and Labor Turnover Survey) rates for
-Florida and the US nationally, by industry sector.
+Fetch monthly JOLTS (Job Openings and Labor Turnover Survey) rates: the US
+by industry sector, and Florida for total nonfarm only (BLS publishes no
+state-level industry detail).
 
 JOLTS has no occupation-level breakdown -- series are keyed by NAICS industry
 only (verified against https://download.bls.gov/pub/time.series/jt/jt.industry
@@ -47,6 +48,12 @@ def build_series_ids():
     ids = {}
     for industry_code, industry_name in JOLTS_INDUSTRY_SECTORS.items():
         for region, state_code in REGIONS.items():
+            # BLS publishes state-level JOLTS for total nonfarm only; industry
+            # detail exists nationally. Florida retail, leisure & hospitality,
+            # health care, construction and manufacturing were each queried and
+            # return "Series does not exist" (checked 2026-10-12).
+            if region != "US" and industry_code != "000000":
+                continue
             for elem_code, elem_name in JOLTS_DATA_ELEMENTS.items():
                 sid = f"JTS{industry_code}{state_code}0000000{elem_code}"
                 ids[sid] = {
@@ -80,6 +87,12 @@ def fetch_batch(series_ids, start_year=START_YEAR, end_year=END_YEAR):
     data = resp.json()
     if data["status"] not in ("REQUEST_SUCCEEDED", "REQUEST_SUCCEEDED_MESSAGES"):
         raise RuntimeError(f"BLS API error: {data.get('message')}")
+
+    # The API reports unknown series as "success" with an empty data list, so
+    # check for that explicitly instead of trusting the status field.
+    empty = [s["seriesID"] for s in data["Results"]["series"] if not s["data"]]
+    if empty:
+        raise RuntimeError(f"BLS returned no data for {len(empty)} series (first: {empty[0]}); messages: {data.get('message')}")
 
     cache_file.write_text(json.dumps(data))
     return data
