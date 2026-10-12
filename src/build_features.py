@@ -5,7 +5,7 @@ Cadence is annual (see README.md), so "12mo" features here are really
 year-over-year between consecutive OEWS releases, and "5yr" features compare
 against the release exactly 5 years prior when that occupation code is
 present in both years (SOC code revisions mean not every occupation has a
-continuous 10-year history under the same code).
+continuous multi-year history under the same code).
 
 JOLTS-derived (vacancy/separation rate) and CPI-derived (inflation-adjusted
 wage) features are added in a later merge step once those fetches complete --
@@ -24,19 +24,35 @@ def load_panel() -> pd.DataFrame:
     return df.sort_values(["region", "occ_code", "year"]).reset_index(drop=True)
 
 
+KEYS = ["region", "occ_code"]
+
+
+def lagged_values(df: pd.DataFrame, keys: list, cols: list, lag: int) -> pd.DataFrame:
+    """Each column's value from exactly `lag` years earlier, NaN where that year is absent.
+
+    A positional groupby().shift(lag) silently compares the previous *row*, so
+    an occupation missing a year (SOC code changes, suppressed cells) would get
+    a "year-over-year" change that really spans several years. Joining on
+    year + lag avoids that.
+    """
+    assert not df.duplicated(keys + ["year"]).any(), "panel must have one row per key and year"
+    prev = df[keys + ["year"] + cols].copy()
+    prev["year"] = prev["year"] + lag
+    out = df[keys + ["year"]].merge(prev, on=keys + ["year"], how="left", suffixes=("", "_lag"))
+    return out[cols].set_axis(df.index)
+
+
 def add_growth_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    grp = df.groupby(["region", "occ_code"])
+    cols = ["employment_level", "wage_annual_mean"]
 
-    emp_prev = grp["employment_level"].shift(1)
-    wage_prev = grp["wage_annual_mean"].shift(1)
-    df["employment_change_yoy_pct"] = (df["employment_level"] - emp_prev) / emp_prev * 100
-    df["wage_growth_yoy_pct"] = (df["wage_annual_mean"] - wage_prev) / wage_prev * 100
+    prev = lagged_values(df, KEYS, cols, 1)
+    df["employment_change_yoy_pct"] = (df["employment_level"] - prev["employment_level"]) / prev["employment_level"] * 100
+    df["wage_growth_yoy_pct"] = (df["wage_annual_mean"] - prev["wage_annual_mean"]) / prev["wage_annual_mean"] * 100
 
-    emp_5yr_ago = grp["employment_level"].shift(5)
-    wage_5yr_ago = grp["wage_annual_mean"].shift(5)
-    df["employment_change_5yr_cagr"] = (df["employment_level"] / emp_5yr_ago) ** (1 / 5) - 1
-    df["wage_growth_5yr_cagr"] = (df["wage_annual_mean"] / wage_5yr_ago) ** (1 / 5) - 1
+    ago5 = lagged_values(df, KEYS, cols, 5)
+    df["employment_change_5yr_cagr"] = (df["employment_level"] / ago5["employment_level"]) ** (1 / 5) - 1
+    df["wage_growth_5yr_cagr"] = (df["wage_annual_mean"] / ago5["wage_annual_mean"]) ** (1 / 5) - 1
 
     df["contraction_flag_12mo"] = (df["employment_change_yoy_pct"] < CONTRACTION_THRESHOLD_PCT).astype("Int64")
     df.loc[df["employment_change_yoy_pct"].isna(), "contraction_flag_12mo"] = pd.NA

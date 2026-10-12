@@ -7,24 +7,25 @@ consecutive OEWS annual releases, not a rolling 12-month window.
 """
 import pandas as pd
 
+from build_features import lagged_values
 from config import DATA_PROCESSED
 
 CONTRACTION_THRESHOLD_PCT = -2.0
+KEYS = ["naics", "occ_code"]
 
 
 def load_panel() -> pd.DataFrame:
-    df = pd.read_csv(DATA_PROCESSED / "oews_industry_panel.csv")
-    return df.sort_values(["naics", "occ_code", "year"]).reset_index(drop=True)
+    df = pd.read_csv(DATA_PROCESSED / "oews_industry_panel.csv", dtype={"naics": str})
+    return df.sort_values(KEYS + ["year"]).reset_index(drop=True)
 
 
 def add_growth_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    grp = df.groupby(["naics", "occ_code"])
 
-    emp_prev = grp["employment_level"].shift(1)
-    wage_prev = grp["wage_annual_mean"].shift(1)
-    df["employment_change_yoy_pct"] = (df["employment_level"] - emp_prev) / emp_prev * 100
-    df["wage_growth_yoy_pct"] = (df["wage_annual_mean"] - wage_prev) / wage_prev * 100
+    # Matched on the actual prior year, not the previous row (see lagged_values).
+    prev = lagged_values(df, KEYS, ["employment_level", "wage_annual_mean"], 1)
+    df["employment_change_yoy_pct"] = (df["employment_level"] - prev["employment_level"]) / prev["employment_level"] * 100
+    df["wage_growth_yoy_pct"] = (df["wage_annual_mean"] - prev["wage_annual_mean"]) / prev["wage_annual_mean"] * 100
 
     df["contraction_flag_12mo"] = (df["employment_change_yoy_pct"] < CONTRACTION_THRESHOLD_PCT).astype("Int64")
     df.loc[df["employment_change_yoy_pct"].isna(), "contraction_flag_12mo"] = pd.NA

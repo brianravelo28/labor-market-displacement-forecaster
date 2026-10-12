@@ -19,7 +19,7 @@ BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
 
 # OEWS annual "All Data" archives, published each May, one file per year.
 # Source: https://www.bls.gov/oes/tables.htm -> special-requests/oesm{YY}all.zip
-OEWS_YEARS = list(range(2015, 2025))  # 2015-2024
+OEWS_YEARS = list(range(2015, 2026))  # 2015-2025
 OEWS_ARCHIVE_URL = "https://www.bls.gov/oes/special-requests/oesm{yy}all.zip"
 
 # Florida state FIPS code, used for JOLTS state-level series.
@@ -36,8 +36,10 @@ OEWS_SECTOR_NAICS_CODES = [
 
 # NAICS industry codes used for industry-level JOLTS series (position 4-9 of
 # a JTS series id). Verified against https://download.bls.gov/pub/time.series/jt/jt.industry
-# "000000" = total nonfarm (all industries). Sub-sectors chosen for South Florida
-# relevance (retail, healthcare, hospitality) in addition to the major groups.
+# "000000" = total nonfarm (all industries). Industry detail is available for the
+# US only; Florida has the total-nonfarm series alone. Sub-sectors (retail,
+# healthcare, hospitality) are included alongside the major groups because they
+# dominate Florida's economy.
 JOLTS_INDUSTRY_SECTORS = {
     "000000": "Total nonfarm",
     "110099": "Mining and logging",
