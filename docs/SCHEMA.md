@@ -2,7 +2,7 @@
 
 All processed files live in `data/processed/` and are **committed to the repo** so the deployed dashboard can run without re-downloading from BLS (the raw `data/raw/` archives are the git-ignored part). Regenerate them via the scripts in `data/` and `src/` — pipeline order is in the [README](../README.md#rebuild-everything-from-raw-bls-data-optional).
 
-Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below) and `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)).
+Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below), `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)) and `overlap_test.json` (the 1/2/3-year-horizon test; see [METHODOLOGY.md](METHODOLOGY.md#model)).
 
 ## `oews_occupation_panel.csv`
 

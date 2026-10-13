@@ -55,8 +55,10 @@ python src/build_industry_features.py
 # (writes the model and data/processed/model_metrics.json)
 python src/train_model.py
 
-# Optional: re-run the test of whether CPI/JOLTS inputs help the forecaster
+# Optional: re-run the test of whether CPI/JOLTS inputs help the forecaster,
+# and the 1/2/3-year-horizon test of whether the forecaster's edge is just survey overlap
 python src/feature_set_experiment.py
+python src/overlap_test.py
 ```
 
 The scripts self-identify to BLS with a `User-Agent` (BLS serves an "Access Denied" page to generic browser user agents). Before running the downloads, create a `.env` file in the repo root containing `BLS_CONTACT_EMAIL=you@example.com` (read by `src/config.py`; `.env` is git-ignored). `BLS_API_KEY` is optional; with a registered key the API allows far more queries and longer windows.
@@ -138,7 +140,7 @@ Full citations and API documentation links: [docs/CITATIONS.md](docs/CITATIONS.m
 - **Tested, not adopted**: real-wage and JOLTS features as forecaster inputs. They did not improve out-of-sample accuracy (see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#cpi-and-jolts)), so the forecast still runs on OEWS-only inputs.
 - **Not implemented**: a displacement risk *score*. Today the Predictive Scenarios tab only applies a simple growth-rate threshold (low/moderate/high); the formula in the original brief also needs job-postings data this build doesn't collect. Also not built: "wage compression" in the sense of narrowing pay differentials across the wage distribution — the dashboard reports real wage *decline* (purchasing power), not spread.
 - **Not started**: Fairness/equity audit (Tab 5) — needs a methodology decision, not just more data.
-- **OEWS is not built for year-over-year comparison.** BLS's own FAQ says the survey is designed for cross-sectional estimates and is "less useful for looking at changes over time", citing classification changes and its three-year pooled sample ([BLS: Can OEWS data be used to look at changes over time?](https://www.bls.gov/oes/oes_ques.htm)). Every growth rate on the dashboard and every forecast inherits that: the numbers are best read as directional, and consecutive releases share most of their underlying survey panels.
+- **OEWS is not built for year-over-year comparison.** BLS's own FAQ says the survey is designed for cross-sectional estimates and is "less useful for looking at changes over time", citing classification changes and its three-year pooled sample ([BLS: Can OEWS data be used to look at changes over time?](https://www.bls.gov/oes/oes_ques.htm)). Every growth rate on the dashboard and every forecast inherits that: the numbers are best read as directional, and consecutive releases share most of their underlying survey panels. A test of whether the forecaster's small edge survives when the releases don't overlap (forecasting 1, 2 and 3 years ahead) was inconclusive: the edge is no clearer at any horizon ([docs/METHODOLOGY.md](docs/METHODOLOGY.md#model)).
 - **Known data-quality caveats**: occupations with employment in the tens/hundreds show large YoY % swings from OEWS sampling variance — the sector tab filters these out of its rankings, but the notebook's top-movers tables don't. Some BLS estimates are carried forward unchanged between releases (in the 2024 release it pushed Florida's median employment growth to exactly 0.0%). Details in [docs/METHODOLOGY.md](docs/METHODOLOGY.md#known-limitations).
 - **Cadence**: annual, not monthly (OEWS is a point-in-time annual survey; see methodology doc for why the original monthly-cadence plan didn't match reality).
 

@@ -71,8 +71,12 @@ METRICS_PATH = DATA_PROCESSED / "model_metrics.json"
 MODEL_PATH = DATA_PROCESSED / "employment_forecast_model.txt"
 
 
-def build_supervised(df: pd.DataFrame) -> pd.DataFrame:
-    """One row per (region, occupation, year t) that has an observed year t+1."""
+def build_supervised(df: pd.DataFrame, horizon: int = 1) -> pd.DataFrame:
+    """One row per (region, occupation, year t) that has an observed year t+horizon.
+
+    The target column holds employment `horizon` years ahead. The shipped model
+    uses horizon=1; longer horizons are only used by overlap_test.py.
+    """
     df = df.copy()
     df["occ_major_group"] = df["occ_code"].str[:2].astype("category")
     df["region"] = df["region"].astype("category")
@@ -80,10 +84,11 @@ def build_supervised(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.sort_values(["region", "occ_code", "year"])
     grp = df.groupby(["region", "occ_code"], observed=True)
-    df[TARGET_COL] = grp["employment_level"].shift(-1)
-    # Only true adjacent-year pairs: a missing year must not turn into a
-    # multi-year "next".
-    df = df[grp["year"].shift(-1) == df["year"] + 1]
+    df[TARGET_COL] = grp["employment_level"].shift(-horizon)
+    # Only pairs exactly `horizon` years apart: a missing year must not turn
+    # into a longer "next". (Years are unique and increasing within a group, so
+    # an exact match also means no year in between is missing.)
+    df = df[grp["year"].shift(-horizon) == df["year"] + horizon]
 
     df = df.dropna(subset=[TARGET_COL] + FEATURE_COLS).copy()
     # Predicting the level (even log1p(level)) fails at the top end: only a
