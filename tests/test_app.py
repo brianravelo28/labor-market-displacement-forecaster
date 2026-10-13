@@ -126,3 +126,70 @@ def test_accuracy_note_quotes_the_training_metrics(dashboard):
 def test_legend_sentence_only_when_the_chart_has_a_legend(dashboard):
     assert "legend" not in dashboard.chart_hint().children
     assert "legend" in dashboard.chart_hint(has_legend=True).children
+
+
+# ---- Tab 2: occupation vs worker weighting -----------------------------------
+
+def test_weighted_quantile_with_equal_weights_is_the_ordinary_median(dashboard):
+    s = pd.Series([5.0, 1.0, 9.0, 3.0, 7.0, 2.0])
+    ones = pd.Series(np.ones(len(s)))
+    assert dashboard.weighted_quantile(s, ones, 0.5) == pytest.approx(s.median())
+    assert dashboard.weighted_quantile(s.iloc[:5], ones.iloc[:5], 0.5) == pytest.approx(s.iloc[:5].median())
+
+
+def test_weighted_quantile_follows_the_weight(dashboard):
+    values = pd.Series([1.0, 2.0, 3.0])
+    assert dashboard.weighted_quantile(values, pd.Series([1.0, 1.0, 98.0]), 0.5) == pytest.approx(3.0, abs=0.05)  # interpolated, so near 3
+    assert dashboard.weighted_quantile(values, pd.Series([98.0, 1.0, 1.0]), 0.5) == pytest.approx(1.0, abs=0.05)
+
+
+def test_weighted_quantile_ignores_missing_values_and_weights(dashboard):
+    values = pd.Series([1.0, np.nan, 3.0, 100.0])
+    weights = pd.Series([1.0, 5.0, 1.0, np.nan])
+    assert dashboard.weighted_quantile(values, weights, 0.5) == pytest.approx(2.0)
+    assert np.isnan(dashboard.weighted_quantile(pd.Series([np.nan]), pd.Series([1.0]), 0.5))
+
+
+def test_weighted_share_counts_workers_not_occupations(dashboard):
+    values = pd.Series([-1.0, 1.0])
+    assert dashboard.share_negative(values) == 50.0                              # one of two occupations
+    assert dashboard.share_negative(values, pd.Series([3.0, 1.0])) == 75.0       # three of four workers
+    assert dashboard.share_where(pd.Series([1, 0, np.nan]), lambda s: s == 1) == 50.0
+
+
+def regional_numbers(dashboard, weighting):
+    figs = dashboard.update_regional_tab("tab-2", weighting)
+    return [tuple(f.data[0].y) for f in figs], [f.layout.title.text for f in figs]
+
+
+def test_default_view_is_by_occupation_and_matches_plain_pandas(dashboard, occupation_features):
+    f = occupation_features
+    latest = f[f["year"] == f["year"].max()]
+    both = set(latest[latest["region"] == "US"]["occ_code"]) & set(latest[latest["region"] == "FL"]["occ_code"])
+    us, fl = (latest[(latest["region"] == r) & latest["occ_code"].isin(both)] for r in ("US", "FL"))
+    ys, _ = regional_numbers(dashboard, "occupation")
+    assert ys[0] == pytest.approx((us["employment_change_yoy_pct"].median(), fl["employment_change_yoy_pct"].median()))
+    assert ys[1] == pytest.approx((us["wage_annual_mean"].median(), fl["wage_annual_mean"].median()))
+    assert dashboard.update_regional_tab("tab-2")[1].data[0].y == tuple(ys[1])      # the default argument is "occupation"
+
+
+def test_worker_view_weights_each_region_by_its_own_employment(dashboard, occupation_features):
+    f = occupation_features
+    latest = f[f["year"] == f["year"].max()]
+    both = set(latest[latest["region"] == "US"]["occ_code"]) & set(latest[latest["region"] == "FL"]["occ_code"])
+    fl = latest[(latest["region"] == "FL") & latest["occ_code"].isin(both)].dropna(subset=["wage_annual_mean", "employment_level"])
+    fl = fl.sort_values("wage_annual_mean")
+    cumulative = fl["employment_level"].cumsum() / fl["employment_level"].sum()
+    median_worker_wage = fl["wage_annual_mean"][cumulative >= 0.5].iloc[0]       # the occupation holding the 50th-percentile worker
+    ys, _ = regional_numbers(dashboard, "worker")
+    assert ys[1][1] == pytest.approx(median_worker_wage, rel=0.02)
+    assert ys[1][1] < regional_numbers(dashboard, "occupation")[0][1][1]          # workers cluster in lower-paid occupations
+
+
+def test_worker_view_relabels_charts_and_leaves_job_openings_alone(dashboard):
+    ys_o, titles_o = regional_numbers(dashboard, "occupation")
+    ys_w, titles_w = regional_numbers(dashboard, "worker")
+    assert all("worker" in t.lower() for t in titles_w[:5])
+    assert not any("worker" in t.lower() for t in titles_o)
+    assert ys_o[5] == ys_w[5]
+    assert all(len(t) <= 60 for t in titles_w)                                    # long titles clipped in this grid before

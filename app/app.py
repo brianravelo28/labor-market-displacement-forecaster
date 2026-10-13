@@ -132,10 +132,28 @@ tab2_content = html.Div(
             f"Occupations present in both US and FL for the most recent year ({LATEST_YEAR}). "
             "'Real' wage changes are deflated with the national CPI-U (May to May), so both regions "
             "get the same inflation rate; the job openings rate is each region's JOLTS total nonfarm "
-            "series. The employment growth chart's whiskers span the 25th-75th percentile occupation (not the full range, which "
+            "series. The employment growth chart's whiskers span the 25th-75th percentile (not the full range, which "
             "is dominated by a handful of small occupations with extreme swings from OEWS sampling "
-            "noise) -- FL's median sits near zero, but occupations underneath it range widely.",
+            "noise) -- so a median near zero can still sit on top of a wide spread.",
             style={"color": "#666"},
+        ),
+        dcc.RadioItems(
+            id="regional-weighting",
+            options=[
+                {"label": " Each occupation counts equally", "value": "occupation"},
+                {"label": " Each worker counts equally (weighted by employment)", "value": "worker"},
+            ],
+            value="occupation",
+            inline=True,
+            inputStyle={"marginLeft": "16px", "marginRight": "4px"},
+            style={"margin": "4px 0 8px"},
+        ),
+        html.P(
+            "By occupation, a 500-person occupation counts as much as Retail Salespersons (millions of workers). "
+            "By worker, each occupation counts in proportion to its employment in that region, so the figures "
+            "describe what the typical worker rather than the typical occupation experiences. Weights are each "
+            f"region's own {LATEST_YEAR} employment; the job openings rate is not affected.",
+            style={"color": "#888", "fontSize": "13px", "marginTop": 0},
         ),
         html.Div(
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px"},
@@ -370,9 +388,42 @@ def update_dashboard(occ_code, region):
     return kpis, emp_fig, wage_fig
 
 
-def share_negative(series):
-    """Percent of occupations with a negative value, among those that have one."""
-    return (series.dropna() < 0).mean() * 100
+def weighted_quantile(values, weights, q):
+    """q-quantile of `values` where each value counts `weights` times (here: employment).
+
+    Uses midpoint cumulative weights, so equal weights reproduce the ordinary
+    median. Entries missing a value or a weight are ignored."""
+    ok = values.notna() & weights.notna() & (weights > 0)
+    v, w = values[ok].to_numpy(dtype=float), weights[ok].to_numpy(dtype=float)
+    if len(v) == 0:
+        return float("nan")
+    order = np.argsort(v, kind="stable")
+    v, w = v[order], w[order]
+    cumulative = (np.cumsum(w) - 0.5 * w) / w.sum()
+    return float(np.interp(q, cumulative, v))
+
+
+def share_where(series, predicate, weights=None):
+    """Percent of entries satisfying `predicate`, among those with a value.
+
+    Unweighted it counts occupations; with `weights` (employment) it is the
+    share of workers in occupations that satisfy it."""
+    ok = series.notna() if weights is None else series.notna() & weights.notna()
+    hit = predicate(series[ok])
+    if weights is None:
+        return hit.mean() * 100
+    return weights[ok][hit].sum() / weights[ok].sum() * 100
+
+
+def share_negative(series, weights=None):
+    """Percent of occupations (or of workers, with weights) whose value is negative."""
+    return share_where(series, lambda s: s < 0, weights)
+
+
+def region_quantile(frame, column, q, by_worker):
+    if by_worker:
+        return weighted_quantile(frame[column], frame["employment_level"], q)
+    return frame[column].quantile(q)
 
 
 def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
@@ -394,7 +445,7 @@ def regional_bar(us_val, fl_val, title, yaxis_title, fmt="{:.1f}"):
     return fig
 
 
-def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
+def regional_bar_with_iqr(us_frame, fl_frame, column, title, yaxis_title, by_worker=False):
     # A median-only bar for this metric reads as broken when the FL median
     # lands on exactly 0.0% (13 of 744 FL occupations have identical
     # employment in consecutive releases) -- a single point estimate
@@ -407,9 +458,8 @@ def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
     # extreme tail never enters the range calculation at all, so the chart
     # can't be dominated by it, while still visibly showing real spread
     # around the median bar instead of a lonely flat number.
-    us_med, fl_med = us_vals.median(), fl_vals.median()
-    us_q1, us_q3 = us_vals.quantile(0.25), us_vals.quantile(0.75)
-    fl_q1, fl_q3 = fl_vals.quantile(0.25), fl_vals.quantile(0.75)
+    us_med, us_q1, us_q3 = (region_quantile(us_frame, column, q, by_worker) for q in (0.5, 0.25, 0.75))
+    fl_med, fl_q1, fl_q3 = (region_quantile(fl_frame, column, q, by_worker) for q in (0.5, 0.25, 0.75))
     fig = go.Figure(
         go.Bar(
             x=["National (US)", "Florida"],
@@ -446,8 +496,12 @@ def regional_bar_with_iqr(us_vals, fl_vals, title, yaxis_title):
     Output("regional-contraction-prevalence", "figure"),
     Output("regional-job-openings", "figure"),
     Input("main-tabs", "value"),
+    Input("regional-weighting", "value"),
 )
-def update_regional_tab(_tab):
+def update_regional_tab(_tab, weighting="occupation"):
+    by_worker = weighting == "worker"
+    unit = "worker" if by_worker else "occupation"
+    w = (lambda frame: frame["employment_level"]) if by_worker else (lambda frame: None)
     latest_year = df["year"].max()
     latest = df[df["year"] == latest_year]
 
@@ -457,37 +511,39 @@ def update_regional_tab(_tab):
     us, fl = latest[latest["region"] == "US"], latest[latest["region"] == "FL"]
 
     emp_growth_fig = regional_bar_with_iqr(
-        us["employment_change_yoy_pct"].dropna(),
-        fl["employment_change_yoy_pct"].dropna(),
-        f"Employment growth rate, {latest_year} (median, IQR whiskers)",
+        us, fl, "employment_change_yoy_pct",
+        f"Employment growth rate, {latest_year} (median {unit}, IQR whiskers)",
         "% change",
+        by_worker,
     )
     wage_level_fig = regional_bar(
-        us["wage_annual_mean"].median(),
-        fl["wage_annual_mean"].median(),
-        f"Median annual mean wage, {latest_year} (nominal)",
+        region_quantile(us, "wage_annual_mean", 0.5, by_worker),
+        region_quantile(fl, "wage_annual_mean", 0.5, by_worker),
+        f"Median annual mean wage, {latest_year} (nominal, median {unit})",
         "$",
         "${:,.0f}",
     )
+    share_label = "% of workers" if by_worker else "% of occupations"
+    lead = "Workers in occupations with" if by_worker else "Occupations with"
     wage_decline_fig = regional_bar(
-        share_negative(us["wage_growth_yoy_pct"]),
-        share_negative(fl["wage_growth_yoy_pct"]),
-        "Occupations with nominal wage decline (YoY)",
-        "% of occupations",
+        share_negative(us["wage_growth_yoy_pct"], w(us)),
+        share_negative(fl["wage_growth_yoy_pct"], w(fl)),
+        f"{lead} nominal wage decline (YoY)",
+        share_label,
         "{:.0f}%",
     )
     real_wage_decline_fig = regional_bar(
-        share_negative(us["real_wage_growth_yoy_pct"]),
-        share_negative(fl["real_wage_growth_yoy_pct"]),
-        "Occupations with real wage decline (YoY, after CPI)",
-        "% of occupations",
+        share_negative(us["real_wage_growth_yoy_pct"], w(us)),
+        share_negative(fl["real_wage_growth_yoy_pct"], w(fl)),
+        f"{lead} real wage decline (after CPI)" if by_worker else "Occupations with real wage decline (YoY, after CPI)",
+        share_label,
         "{:.0f}%",
     )
     contraction_fig = regional_bar(
-        (us["contraction_flag_12mo"].dropna() == 1).mean() * 100,
-        (fl["contraction_flag_12mo"].dropna() == 1).mean() * 100,
-        "Contracting occupations (>2% YoY decline)",
-        "% of occupations",
+        share_where(us["contraction_flag_12mo"], lambda s: s == 1, w(us)),
+        share_where(fl["contraction_flag_12mo"], lambda s: s == 1, w(fl)),
+        "Workers in contracting occupations (>2% YoY)" if by_worker else "Contracting occupations (>2% YoY decline)",
+        share_label,
         "{:.0f}%",
     )
     openings_fig = regional_bar(
