@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Dash](https://img.shields.io/badge/dashboard-Plotly%20Dash-blue.svg)](https://dash.plotly.com/)
+[![tests](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml/badge.svg)](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml)
 
 A labor-market analytics pipeline for occupation-level employment and wages, built on real BLS data (not synthetic), comparing the US with Florida as a whole. **Status: in progress** — 4 of 5 dashboard tabs are built and deployed; see [Status & Limitations](#status--limitations) for exactly what's done vs. pending.
 
@@ -64,6 +65,15 @@ python src/overlap_test.py
 The scripts self-identify to BLS with a `User-Agent` (BLS serves an "Access Denied" page to generic browser user agents). Before running the downloads, create a `.env` file in the repo root containing `BLS_CONTACT_EMAIL=you@example.com` (read by `src/config.py`; `.env` is git-ignored). `BLS_API_KEY` is optional; with a registered key the API allows far more queries and longer windows.
 
 The CPI and JOLTS pulls go through BLS's timeseries API, which returns at most 10 years per query without a key, so each series is fetched in two year-windows (2015–2024, 2025–now) and merged.
+
+### Run the tests
+
+```bash
+pip install -r requirements.txt pytest   # or requirements-dev.txt
+python -m pytest
+```
+
+About 70 tests, a few seconds, no network access needed. They cover the year-matched lag logic and growth features, the CPI and JOLTS merges, the supervised-pair construction and the walk-forward rule (training never sees a target that wasn't yet known), the BLS fetchers (series IDs, the API's empty-success quirk, 10-year windows, 2015-style OEWS headers) and every dashboard callback. They also check the committed data and model against each other: unique keys, every year present, the shipped model's feature list matching the code that feeds it, `model_metrics.json` matching the data it was trained on, and the README's quoted holdout error matching the metrics. GitHub Actions runs them on Python 3.9 and 3.11 for every push and pull request. What they do not cover: whether the forecast is *good* (that is the validation in the methodology doc, not a test), the layout and look of the pages, and the live Render deployment.
 
 ### Explore the notebooks
 
