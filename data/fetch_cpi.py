@@ -1,7 +1,6 @@
 """
 Fetch BLS CPI-U (All Urban Consumers, US city average, all items, not seasonally
-adjusted) monthly, used to compute inflation-adjusted wages and real wage
-compression.
+adjusted) monthly, used to compute inflation-adjusted (real) wages and real wage changes.
 
 Series ID CUUR0000SA0 is a standard, well-known BLS series (unlike OEWS/JOLTS,
 this one is a genuine continuous monthly time series going back decades), so

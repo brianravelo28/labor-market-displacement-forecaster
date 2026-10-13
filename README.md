@@ -1,4 +1,4 @@
-# Occupation Displacement & Wage Compression Forecaster
+# Occupation Displacement Forecaster & Real Wage Tracker
 
 ![Occupation Displacement Forecaster dashboard](docs/screenshot.png)
 
@@ -7,7 +7,7 @@
 [![Dash](https://img.shields.io/badge/dashboard-Plotly%20Dash-blue.svg)](https://dash.plotly.com/)
 [![tests](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml/badge.svg)](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml)
 
-A labor-market analytics pipeline for occupation-level employment and wages, built on real BLS data (not synthetic), comparing the US with Florida as a whole. **Status: in progress** — 4 of 5 dashboard tabs are built and deployed; see [Status & Limitations](#status--limitations) for exactly what's done vs. pending.
+A labor-market analytics pipeline for occupation-level employment and wages, built on real BLS data (not synthetic), comparing the US with Florida as a whole. **Status: core build complete** — the four-tab dashboard is built and deployed; see [Status & Limitations](#status--limitations) for what is done and what isn't.
 
 **Live dashboard: [labor-market-displacement-forecaster.onrender.com](https://labor-market-displacement-forecaster.onrender.com/)** — hosted on Render's free tier, which spins the app down when idle, so the first load after a quiet period can take up to a minute.
 
@@ -56,6 +56,9 @@ python src/build_industry_features.py
 # (writes the model and data/processed/model_metrics.json)
 python src/train_model.py
 
+# Observed 2020 response per occupation, for the scenario tab
+python src/build_shock_replay.py
+
 # Optional: re-run the test of whether CPI/JOLTS inputs help the forecaster,
 # and the 1/2/3-year-horizon test of whether the forecaster's edge is just survey overlap
 python src/feature_set_experiment.py
@@ -92,10 +95,8 @@ jupyter notebook notebooks/
 |---|---|
 | **Occupation Search & Risk** | Search any occupation, see employment history, nominal vs. inflation-adjusted wage history, YoY trends (employment, nominal wage, real wage), a contraction flag (employment down >2% YoY), and the JOLTS job-openings/quits/layoffs rates of the industries it works in, US or FL. A full displacement *risk score* is not implemented — see [Status & Limitations](#status--limitations). |
 | **Regional Comparison** | US vs. Florida, counting either each occupation or each worker (employment-weighted) equally via a toggle: employment growth (median with 25th–75th percentile whiskers, since a median-only bar hid how much occupations actually vary), median wage level, the share of occupations with nominal and with real (after-CPI) wage decline, the share contracting, and the JOLTS job-openings rate |
-| **Industry & Sector Analysis** | Pick a NAICS sector, see its JOLTS openings, quits and layoffs rates, a wage-growth-vs-employment-change scatter and top movers. Occupations under 500 employees within a sector — in either year compared — are excluded from the ranked tables (sampling noise), though still shown in the scatter |
-| **Predictive Scenarios** | The model's baseline forecast (with a note on how well it validated, and that it doesn't use CPI or JOLTS) plus GDP contraction / automation / immigration sliders. The sliders are documented linear assumptions, not fitted elasticities — treat as directional |
-
-A 5th tab (Fairness & Equity audit) is **not built** — the original plan's approach of inferring gender/age from job-posting text is methodologically weak, and this build has no job-postings data source at all. Needs a sounder methodology before implementation.
+| **Industry & Sector Analysis** | Pick a NAICS sector, see its JOLTS openings, quits and layoffs rates, a real-or-nominal-wage-growth-vs-employment-change scatter (real by default; the toggle matters mainly for where the zero line falls) and top movers. Occupations under 500 employees within a sector — in either year compared — are excluded from the ranked tables (sampling noise), though still shown in the scatter |
+| **Predictive Scenarios** | The model's baseline forecast (with a note on how well it validated, and that it doesn't use CPI or JOLTS) plus a **replay of 2020**: one severity slider (0 to 1x) applies the employment response each occupation actually showed in the 2020 OEWS release (its change minus its 2016–2019 trend) on top of the baseline. It is one observed episode, not a fitted elasticity or a prediction; occupations under 10,000 employees borrow their occupation group's response, and the card says which was used |
 
 ## Deployment (Render)
 
@@ -148,8 +149,8 @@ Full citations and API documentation links: [docs/CITATIONS.md](docs/CITATIONS.m
 
 - **Done**: OEWS annual panel (2015–2025) + engineered features, CPI-adjusted real wages and JOLTS tightness merged into the occupation and industry tables and shown on Tabs 1–3, industry-sector breakdown, LightGBM employment forecaster with walk-forward validation against a no-change baseline, dashboard Tabs 1–4 deployed on Render, 2 executed EDA/evaluation notebooks.
 - **Tested, not adopted**: real-wage and JOLTS features as forecaster inputs. They did not improve out-of-sample accuracy (see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#cpi-and-jolts)), so the forecast still runs on OEWS-only inputs.
-- **Not implemented**: a displacement risk *score*. Today the Predictive Scenarios tab only applies a simple growth-rate threshold (low/moderate/high); the formula in the original brief also needs job-postings data this build doesn't collect. Also not built: "wage compression" in the sense of narrowing pay differentials across the wage distribution — the dashboard reports real wage *decline* (purchasing power), not spread.
-- **Not started**: Fairness/equity audit (Tab 5) — needs a methodology decision, not just more data.
+- **Scenario tool is a replay, not a model**: it re-applies each occupation's observed 2020 response; there are no fitted elasticities (see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#scenario-tool-a-replay-of-2020)).
+- **Not implemented**: a displacement risk *score*. Today the Predictive Scenarios tab only applies a simple growth-rate threshold (low/moderate/high); the formula in the original brief also needs job-postings data this build doesn't collect.
 - **OEWS is not built for year-over-year comparison.** BLS's own FAQ says the survey is designed for cross-sectional estimates and is "less useful for looking at changes over time", citing classification changes and its three-year pooled sample ([BLS: Can OEWS data be used to look at changes over time?](https://www.bls.gov/oes/oes_ques.htm)). Every growth rate on the dashboard and every forecast inherits that: the numbers are best read as directional, and consecutive releases share most of their underlying survey panels. A test of whether the forecaster's small edge survives when the releases don't overlap (forecasting 1, 2 and 3 years ahead) was inconclusive: the edge is no clearer at any horizon ([docs/METHODOLOGY.md](docs/METHODOLOGY.md#model)).
 - **Known data-quality caveats**: occupations with employment in the tens/hundreds show large YoY % swings from OEWS sampling variance — the sector tab filters these out of its rankings, but the notebook's top-movers tables don't. Some BLS estimates are carried forward unchanged between releases (in the 2024 release it pushed Florida's median employment growth to exactly 0.0%). Details in [docs/METHODOLOGY.md](docs/METHODOLOGY.md#known-limitations).
 - **Cadence**: annual, not monthly (OEWS is a point-in-time annual survey; see methodology doc for why the original monthly-cadence plan didn't match reality).

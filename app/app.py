@@ -1,5 +1,5 @@
 """
-Occupation Displacement & Wage Compression Forecaster -- Dash app.
+Occupation Displacement Forecaster & Real Wage Tracker -- Dash app.
 
 Four tabs: Occupation Search, Regional Comparison (US vs FL), Industry &
 Sector Analysis, and Predictive Scenarios. Everything runs on the processed
@@ -23,6 +23,7 @@ PROCESSED_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
 DATA_PATH = PROCESSED_DIR / "oews_occupation_features.csv"
 INDUSTRY_DATA_PATH = PROCESSED_DIR / "oews_industry_features.csv"
 MODEL_PATH = PROCESSED_DIR / "employment_forecast_model.txt"
+SHOCK_PATH = PROCESSED_DIR / "shock_2020_response.csv"
 
 # Below this (in either the current or the prior year), an occupation's
 # employment count within a single industry sector is small enough that YoY %
@@ -62,6 +63,8 @@ df = pd.read_csv(DATA_PATH)
 # separate schedule and may not have finished yet -- degrade gracefully.
 industry_df = pd.read_csv(INDUSTRY_DATA_PATH, dtype={"naics": str}) if INDUSTRY_DATA_PATH.exists() else None
 forecast_model = lgb.Booster(model_file=str(MODEL_PATH)) if MODEL_PATH.exists() else None
+# Observed 2020 employment response per occupation (src/build_shock_replay.py), for the scenario tab.
+shock_response = pd.read_csv(SHOCK_PATH).set_index(["region", "occ_code"]) if SHOCK_PATH.exists() else None
 FIRST_YEAR, LATEST_YEAR = int(df["year"].min()), int(df["year"].max())
 
 
@@ -94,7 +97,7 @@ occ_options = (
 DEFAULT_OCC = df.loc[df["employment_level"].idxmax(), "occ_code"]
 
 app = dash.Dash(__name__)
-app.title = "Occupation Displacement & Wage Compression Forecaster"
+app.title = "Occupation Displacement Forecaster & Real Wage Tracker"
 server = app.server  # exposes the underlying Flask app for gunicorn (see Procfile)
 
 tab1_content = html.Div(
@@ -190,7 +193,18 @@ if industry_df is not None:
                 id="sector-dropdown",
                 options=[{"label": row.naics_title, "value": row.naics} for row in sector_options.itertuples()],
                 value=DEFAULT_SECTOR,
-                style={"marginTop": "20px", "marginBottom": "16px", "maxWidth": "500px"},
+                style={"marginTop": "20px", "marginBottom": "12px", "maxWidth": "500px"},
+            ),
+            dcc.RadioItems(
+                id="sector-wage-basis",
+                options=[
+                    {"label": " Real wage growth (after CPI inflation)", "value": "real"},
+                    {"label": " Nominal wage growth", "value": "nominal"},
+                ],
+                value="real",
+                inline=True,
+                inputStyle={"marginLeft": "16px", "marginRight": "4px"},
+                style={"marginBottom": "16px"},
             ),
             html.Div(id="sector-jolts-row", style={"display": "flex", "flexWrap": "wrap", "gap": "16px", "marginBottom": "16px"}),
             dcc.Graph(id="sector-scatter", config=NO_MODEBAR),
@@ -210,24 +224,30 @@ else:
         children="Industry-sector data not yet available (still parsing OEWS archives -- rerun src/fetch_oews_industry.py then reload).",
     )
 
-SLIDER_MARKS = lambda lo, hi, step: {i: f"{i}%" for i in range(lo, hi + 1, step)}
-# dcc.Slider centers each mark's label on its tick position, so the leftmost
-# mark (e.g. "-20%") has its label centered right at the track's start --
-# roughly half the text, including the leading minus sign, renders to the
-# left of the slider's own box and gets clipped with no room to spare.
+# dcc.Slider centers each mark's label on its tick position, so the outermost
+# labels render partly outside the slider's own box and can be clipped.
 # Padding the slider inside its own wrapper (rather than relying on Dash's
 # internal slider CSS class names, which could change) gives that overflow
 # somewhere real to go.
 SLIDER_WRAPPER_STYLE = {"padding": "0 24px"}
+SEVERITY_MARKS = {0: "none", 0.25: "0.25x", 0.5: "0.5x", 0.75: "0.75x", 1: "1x (as in 2020)"}
 
 tab4_content = html.Div(
     children=[
         html.P(
-            "Illustrative what-if tool: applies transparent, documented linear "
-            "adjustments on top of the trained model's baseline forecast. These are "
-            "simplifying assumptions, not fitted causal elasticities (no macro model "
-            "exists here) -- treat results as directional, not precise.",
+            "Replay of 2020: shows the model's baseline forecast plus the employment response each "
+            "occupation actually had in the 2020 OEWS release, scaled by the severity slider (1x = the full "
+            "response). The response is the occupation's 2020 change minus how fast it had been growing in "
+            "2016-2019, so only the part plausibly due to the shock is applied. This is one observed episode, "
+            "not a fitted elasticity and not a prediction that a similar shock is coming.",
             style={"color": "#666", "marginTop": "20px"},
+        ),
+        html.P(
+            "Two cautions. Each OEWS release pools three years of survey data, so the 2020 release shows the "
+            "shock smeared out and the rebound (mostly in the 2022 release) is not included. And an occupation's "
+            "own year-to-year change is very noisy below about 10,000 employees, so smaller occupations use "
+            "their occupation group's response instead (the card says which was used).",
+            style={"color": "#888", "fontSize": "13px"},
         ),
         html.P(BASELINE_ACCURACY_NOTE, style={"color": "#666", "fontSize": "13px"}),
         dcc.Dropdown(
@@ -244,32 +264,16 @@ tab4_content = html.Div(
             style={"marginBottom": "20px"},
         ),
         html.Div(
-            style={"display": "grid", "gridTemplateColumns": "1fr", "gap": "20px", "maxWidth": "600px"},
+            style={"maxWidth": "600px"},
             children=[
-                html.Div([
-                    html.Label("Economic contraction severity (GDP growth impact)"),
-                    html.Div(
-                        dcc.Slider(id="gdp-slider", min=-20, max=5, step=1, value=0, marks=SLIDER_MARKS(-20, 5, 5)),
-                        style=SLIDER_WRAPPER_STYLE,
-                    ),
-                ]),
-                html.Div([
-                    html.Label("Automation impact (additional employment headwind)"),
-                    html.Div(
-                        dcc.Slider(id="automation-slider", min=0, max=20, step=1, value=0, marks=SLIDER_MARKS(0, 20, 5)),
-                        style=SLIDER_WRAPPER_STYLE,
-                    ),
-                ]),
-                html.Div([
-                    html.Label("Immigration policy effect (labor supply adjustment)"),
-                    html.Div(
-                        dcc.Slider(id="immigration-slider", min=-10, max=10, step=1, value=0, marks=SLIDER_MARKS(-10, 10, 5)),
-                        style=SLIDER_WRAPPER_STYLE,
-                    ),
-                ]),
+                html.Label("Severity of a 2020-style shock"),
+                html.Div(
+                    dcc.Slider(id="severity-slider", min=0, max=1, step=0.05, value=0, marks=SEVERITY_MARKS),
+                    style=SLIDER_WRAPPER_STYLE,
+                ),
             ],
         ),
-        html.Div(id="scenario-kpi-row", style={"display": "flex", "gap": "16px", "margin": "24px 0"}),
+        html.Div(id="scenario-kpi-row", style={"display": "flex", "flexWrap": "wrap", "gap": "16px", "margin": "24px 0"}),
         dcc.Graph(id="scenario-chart", config=NO_MODEBAR),
         html.P(id="scenario-summary", style={"fontStyle": "italic", "color": "#444"}),
     ]
@@ -278,7 +282,7 @@ tab4_content = html.Div(
 app.layout = html.Div(
     style={"fontFamily": "Segoe UI, Arial, sans-serif", "maxWidth": "1100px", "margin": "0 auto", "padding": "24px"},
     children=[
-        html.H1("Occupation Displacement & Wage Compression Forecaster", style={"marginBottom": "4px"}),
+        html.H1("Occupation Displacement Forecaster & Real Wage Tracker", style={"marginBottom": "4px"}),
         html.P(
             f"BLS OEWS data, {FIRST_YEAR}-{LATEST_YEAR} (annual), with CPI-U inflation adjustment and "
             "JOLTS job-market tightness.",
@@ -593,17 +597,20 @@ if industry_df is not None:
         Output("sector-top-risk", "children"),
         Output("sector-top-growth", "children"),
         Input("sector-dropdown", "value"),
+        Input("sector-wage-basis", "value"),
     )
-    def update_sector_tab(naics_code):
+    def update_sector_tab(naics_code, wage_basis="real"):
+        wage_col = "real_wage_growth_yoy_pct" if wage_basis == "real" else "wage_growth_yoy_pct"
+        wage_label = "Real wage growth" if wage_basis == "real" else "Nominal wage growth"
         latest_year = industry_df["year"].max()
         sub = industry_df[(industry_df["naics"] == naics_code) & (industry_df["year"] == latest_year)].dropna(
-            subset=["employment_change_yoy_pct", "wage_growth_yoy_pct"]
+            subset=["employment_change_yoy_pct", wage_col]
         )
         sector_name = sub["naics_title"].iloc[0] if len(sub) and "naics_title" in sub.columns else naics_code
 
         scatter_fig = go.Figure(
             go.Scatter(
-                x=sub["wage_growth_yoy_pct"],
+                x=sub[wage_col],
                 y=sub["employment_change_yoy_pct"],
                 mode="markers",
                 marker=dict(
@@ -614,14 +621,14 @@ if industry_df is not None:
                     line=dict(width=0.5, color="#333"),
                 ),
                 text=sub["occ_title"],
-                hovertemplate="%{text}<br>Wage growth: %{x:.1f}%<br>Employment change: %{y:.1f}%<extra></extra>",
+                hovertemplate="%{text}<br>" + wage_label + ": %{x:.1f}%<br>Employment change: %{y:.1f}%<extra></extra>",
             )
         )
         scatter_fig.add_hline(y=0, line_color="#ccc")
         scatter_fig.add_vline(x=0, line_color="#ccc")
         scatter_fig.update_layout(
-            title=f"{sector_name} — wage growth vs employment change, {latest_year} (bubble size = employment)",
-            xaxis_title="Wage growth YoY (%)",
+            title=dict(text=f"{sector_name} — {wage_label.lower()} vs employment change, {latest_year} (bubble size = employment)", font=dict(size=14)),
+            xaxis_title=f"{wage_label} YoY (%)",
             yaxis_title="Employment change YoY (%)",
             margin=dict(t=50),
         )
@@ -652,12 +659,14 @@ if industry_df is not None:
         return sector_jolts_cards(naics_code, latest_year), scatter_fig, risk_table(top_risk), risk_table(top_growth)
 
 
-# Illustrative assumption, not a fitted causal elasticity: a 10-point GDP
-# growth swing is assumed to pass through to occupation employment growth at
-# 60% strength. No macro model exists in this project to estimate real
-# sector-specific elasticities -- this is a transparent placeholder so the
-# scenario tool is directionally useful, not a precise forecast.
-GDP_PASSTHROUGH = 0.6
+def shock_for(occ_code, region):
+    """(response in percentage points, source) for the 2020 replay, or None if unavailable."""
+    if shock_response is None or (region, occ_code) not in shock_response.index:
+        return None
+    row = shock_response.loc[(region, occ_code)]
+    if pd.isna(row["response_pct"]):
+        return None
+    return float(row["response_pct"]), row["source"]
 
 
 def predict_baseline(occ_code, region):
@@ -709,11 +718,9 @@ def risk_level(growth_pct):
     Output("scenario-summary", "children"),
     Input("scenario-occ-dropdown", "value"),
     Input("scenario-region-toggle", "value"),
-    Input("gdp-slider", "value"),
-    Input("automation-slider", "value"),
-    Input("immigration-slider", "value"),
+    Input("severity-slider", "value"),
 )
-def update_scenario_tab(occ_code, region, gdp_pct, automation_pct, immigration_pct):
+def update_scenario_tab(occ_code, region, severity):
     baseline = predict_baseline(occ_code, region)
     if baseline is None:
         empty_fig = go.Figure()
@@ -723,47 +730,45 @@ def update_scenario_tab(occ_code, region, gdp_pct, automation_pct, immigration_p
             "two consecutive years, and at least one is missing."
         )
 
-    scenario_growth_pct = (
-        baseline["baseline_growth_pct"]
-        + gdp_pct * GDP_PASSTHROUGH
-        - automation_pct
-        + immigration_pct
-    )
-    scenario_employment = baseline["current_employment"] * (1 + scenario_growth_pct / 100)
+    base_growth = baseline["baseline_growth_pct"]
+    base_level, base_color = risk_level(base_growth)
+    shock = shock_for(occ_code, region)
 
-    base_level, base_color = risk_level(baseline["baseline_growth_pct"])
-    scenario_level, scenario_color = risk_level(scenario_growth_pct)
+    kpis = [kpi_card("Baseline forecast growth", f"{base_growth:+.1f}%", "model prediction, no scenario")]
+    labels, values, colors = ["Current", "Baseline forecast"], [baseline["current_employment"], baseline["baseline_employment_next"]], ["#999", "#4a90d9"]
 
-    kpis = [
-        kpi_card("Baseline forecast growth", f"{baseline['baseline_growth_pct']:+.1f}%", "model prediction, no scenario"),
-        kpi_card("Scenario forecast growth", f"{scenario_growth_pct:+.1f}%", "with sliders applied", color=scenario_color),
-        kpi_card("Baseline risk level", base_level, color=base_color),
-        kpi_card("Scenario risk level", scenario_level, color=scenario_color),
-    ]
-
-    fig = go.Figure(
-        go.Bar(
-            x=["Current", "Baseline forecast", "Scenario forecast"],
-            y=[baseline["current_employment"], baseline["baseline_employment_next"], scenario_employment],
-            marker_color=["#999", "#4a90d9", "#e07b39"],
-            text=[f"{v:,.0f}" for v in [baseline["current_employment"], baseline["baseline_employment_next"], scenario_employment]],
-            textposition="outside",
+    if shock is None:
+        kpis.append(kpi_card("Baseline risk level", base_level, color=base_color))
+        summary = "No 2020 response is available for this occupation/region, so only the baseline forecast is shown."
+    else:
+        response_pts, source = shock
+        scenario_growth = max(base_growth + (severity or 0) * response_pts, -100.0)
+        scenario_employment = baseline["current_employment"] * (1 + scenario_growth / 100)
+        scenario_level, scenario_color = risk_level(scenario_growth)
+        source_note = ("this occupation's own 2020 change vs. its earlier trend" if source == "occupation"
+                       else "its occupation group's 2020 change (too small for its own)")
+        kpis += [
+            kpi_card("Scenario forecast growth", f"{scenario_growth:+.1f}%", f"baseline + {severity or 0:.2f} x 2020 response", color=scenario_color),
+            kpi_card("2020 response", f"{response_pts:+.1f} pts", source_note),
+            kpi_card("Baseline risk level", base_level, color=base_color),
+            kpi_card("Scenario risk level", scenario_level, color=scenario_color),
+        ]
+        labels.append("Scenario forecast")
+        values.append(scenario_employment)
+        colors.append("#e07b39")
+        summary = (
+            f"At {severity or 0:.2f}x the 2020 response, {baseline['occ_title']} risk moves from {base_level} to {scenario_level} "
+            f"(growth {base_growth:+.1f}% to {scenario_growth:+.1f}%)."
+            if base_level != scenario_level
+            else f"At {severity or 0:.2f}x the 2020 response, {baseline['occ_title']} risk stays {scenario_level}."
         )
-    )
+
+    fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors, text=[f"{v:,.0f}" for v in values], textposition="outside"))
     fig.update_layout(
         title=f"Employment: current vs baseline vs scenario — {baseline['occ_title']} ({region})",
         yaxis_title="Employment",
         margin=dict(t=50),
     )
-
-    summary = (
-        f"Under this scenario (GDP {gdp_pct:+d}%, automation headwind {automation_pct}pp, "
-        f"immigration effect {immigration_pct:+d}%), {baseline['occ_title']} risk moves from "
-        f"{base_level} to {scenario_level}."
-        if base_level != scenario_level
-        else f"Under this scenario, {baseline['occ_title']} risk stays {scenario_level}."
-    )
-
     return kpis, fig, summary
 
 
