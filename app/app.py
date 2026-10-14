@@ -81,8 +81,7 @@ def _baseline_accuracy_note():
         f"How good is the baseline forecast? Tested on the {h['target_year']} data release, which the model had never "
         f"seen, it was closer than simply assuming no change for {m['closer_than_persistence']:.0%} of occupations, "
         f"with a median error of {m['median_ape']:.1f}% vs. {p['median_ape']:.1f}% for assuming no change. That edge "
-        f"is small and not statistically clear-cut, and the risk label is only a threshold on the forecast "
-        f"(below -2% = moderate, below -10% = high). CPI and JOLTS data were tested as forecasting inputs "
+        f"is small and not statistically clear-cut. CPI and JOLTS data were tested as forecasting inputs "
         f"and did not improve accuracy on earlier years, so the forecast does not use them."
     )
 
@@ -212,7 +211,7 @@ if industry_df is not None:
             html.Div(
                 style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px", "marginTop": "8px"},
                 children=[
-                    html.Div([html.H4("Top 10 at-risk (most contracting)"), html.Div(id="sector-top-risk")]),
+                    html.Div([html.H4("Top 10 contracting"), html.Div(id="sector-top-contracting")]),
                     html.Div([html.H4("Top 10 growing"), html.Div(id="sector-top-growth")]),
                 ],
             ),
@@ -292,7 +291,7 @@ app.layout = html.Div(
             id="main-tabs",
             value="tab-1",
             children=[
-                dcc.Tab(label="Occupation Search & Risk", value="tab-1", children=[tab1_content]),
+                dcc.Tab(label="Occupation Search", value="tab-1", children=[tab1_content]),
                 dcc.Tab(label="Regional Comparison (US vs FL)", value="tab-2", children=[tab2_content]),
                 dcc.Tab(label="Industry & Sector Analysis", value="tab-3", children=[tab3_content]),
                 dcc.Tab(label="Predictive Scenarios", value="tab-4", children=[tab4_content]),
@@ -560,7 +559,7 @@ def update_regional_tab(_tab, weighting="occupation"):
     return emp_growth_fig, wage_level_fig, wage_decline_fig, real_wage_decline_fig, contraction_fig, openings_fig
 
 
-def risk_table(rows):
+def movers_table(rows):
     if rows.empty:
         return html.P("No data.", style={"color": "#999"})
     return dash_table.DataTable(
@@ -594,7 +593,7 @@ if industry_df is not None:
     @app.callback(
         Output("sector-jolts-row", "children"),
         Output("sector-scatter", "figure"),
-        Output("sector-top-risk", "children"),
+        Output("sector-top-contracting", "children"),
         Output("sector-top-growth", "children"),
         Input("sector-dropdown", "value"),
         Input("sector-wage-basis", "value"),
@@ -653,10 +652,10 @@ if industry_df is not None:
             & (prior_employment >= SECTOR_RANKING_MIN_EMPLOYMENT)
         ]
         cols = ["occ_title", "employment_level", "employment_change_yoy_pct"]
-        top_risk = ranked.nsmallest(10, "employment_change_yoy_pct")[cols]
+        top_contracting = ranked.nsmallest(10, "employment_change_yoy_pct")[cols]
         top_growth = ranked.nlargest(10, "employment_change_yoy_pct")[cols]
 
-        return sector_jolts_cards(naics_code, latest_year), scatter_fig, risk_table(top_risk), risk_table(top_growth)
+        return sector_jolts_cards(naics_code, latest_year), scatter_fig, movers_table(top_contracting), movers_table(top_growth)
 
 
 def shock_for(occ_code, region):
@@ -704,12 +703,8 @@ def predict_baseline(occ_code, region):
     }
 
 
-def risk_level(growth_pct):
-    if growth_pct < -10:
-        return "HIGH", "#c0392b"
-    if growth_pct < -2:
-        return "MODERATE", "#e08e0b"
-    return "LOW", "#27ae60"
+def growth_color(growth_pct):
+    return "#c0392b" if growth_pct < 0 else "#27ae60"
 
 
 @app.callback(
@@ -731,36 +726,31 @@ def update_scenario_tab(occ_code, region, severity):
         )
 
     base_growth = baseline["baseline_growth_pct"]
-    base_level, base_color = risk_level(base_growth)
     shock = shock_for(occ_code, region)
 
-    kpis = [kpi_card("Baseline forecast growth", f"{base_growth:+.1f}%", "model prediction, no scenario")]
+    kpis = [kpi_card("Baseline forecast growth", f"{base_growth:+.1f}%", "model prediction, no scenario", color=growth_color(base_growth))]
     labels, values, colors = ["Current", "Baseline forecast"], [baseline["current_employment"], baseline["baseline_employment_next"]], ["#999", "#4a90d9"]
 
     if shock is None:
-        kpis.append(kpi_card("Baseline risk level", base_level, color=base_color))
         summary = "No 2020 response is available for this occupation/region, so only the baseline forecast is shown."
     else:
         response_pts, source = shock
         scenario_growth = max(base_growth + (severity or 0) * response_pts, -100.0)
         scenario_employment = baseline["current_employment"] * (1 + scenario_growth / 100)
-        scenario_level, scenario_color = risk_level(scenario_growth)
         source_note = ("this occupation's own 2020 change vs. its earlier trend" if source == "occupation"
                        else "its occupation group's 2020 change (too small for its own)")
         kpis += [
-            kpi_card("Scenario forecast growth", f"{scenario_growth:+.1f}%", f"baseline + {severity or 0:.2f} x 2020 response", color=scenario_color),
+            kpi_card("Scenario forecast growth", f"{scenario_growth:+.1f}%", f"baseline + {severity or 0:.2f} x 2020 response", color=growth_color(scenario_growth)),
             kpi_card("2020 response", f"{response_pts:+.1f} pts", source_note),
-            kpi_card("Baseline risk level", base_level, color=base_color),
-            kpi_card("Scenario risk level", scenario_level, color=scenario_color),
         ]
         labels.append("Scenario forecast")
         values.append(scenario_employment)
         colors.append("#e07b39")
         summary = (
-            f"At {severity or 0:.2f}x the 2020 response, {baseline['occ_title']} risk moves from {base_level} to {scenario_level} "
-            f"(growth {base_growth:+.1f}% to {scenario_growth:+.1f}%)."
-            if base_level != scenario_level
-            else f"At {severity or 0:.2f}x the 2020 response, {baseline['occ_title']} risk stays {scenario_level}."
+            f"At {severity:.2f}x the 2020 response, forecast growth for {baseline['occ_title']} moves from "
+            f"{base_growth:+.1f}% to {scenario_growth:+.1f}%."
+            if severity
+            else f"With no shock applied, forecast growth for {baseline['occ_title']} is the model's baseline, {base_growth:+.1f}%."
         )
 
     fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors, text=[f"{v:,.0f}" for v in values], textposition="outside"))

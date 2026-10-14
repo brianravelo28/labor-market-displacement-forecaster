@@ -59,8 +59,8 @@ def test_share_negative_ignores_missing_values(dashboard):
 
 def test_sector_ranking_floor_applies_to_both_years(dashboard, industry_features):
     for naics in ["72", "62", "44-45"]:
-        _, _, risk, growth = dashboard.update_sector_tab(naics)
-        for table in (risk, growth):
+        _, _, contracting, growth = dashboard.update_sector_tab(naics)
+        for table in (contracting, growth):
             for r in table.data:
                 prior = r["employment_level"] / (1 + r["employment_change_yoy_pct"] / 100)
                 assert r["employment_level"] >= dashboard.SECTOR_RANKING_MIN_EMPLOYMENT
@@ -94,9 +94,16 @@ def test_no_forecast_when_an_input_is_missing(dashboard):
     assert dashboard.predict_baseline(incomplete["occ_code"], incomplete["region"]) is None
 
 
-@pytest.mark.parametrize("pct,level", [(5, "LOW"), (-2, "LOW"), (-2.01, "MODERATE"), (-10, "MODERATE"), (-10.01, "HIGH")])
-def test_risk_thresholds(dashboard, pct, level):
-    assert dashboard.risk_level(pct)[0] == level
+def test_the_scenario_tab_shows_growth_numbers_not_risk_labels(dashboard):
+    kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 1)
+    labels = [k.children[0].children for k in kpis]
+    assert labels == ["Baseline forecast growth", "Scenario forecast growth", "2020 response"]
+    assert not hasattr(dashboard, "risk_level")
+    assert "risk" not in summary.lower() and "forecast growth for" in summary and "moves from" in summary
+
+
+def test_growth_numbers_are_red_when_negative_and_green_otherwise(dashboard):
+    assert dashboard.growth_color(-0.1) == "#c0392b" and dashboard.growth_color(0.0) == "#27ae60"
 
 
 def test_scenario_is_baseline_plus_severity_times_the_2020_response(dashboard):
@@ -121,7 +128,7 @@ def test_scenario_shows_where_the_response_came_from(dashboard):
     assert "own 2020 change" in big[2].children[2].children
     small_fl = dashboard.shock_response[(dashboard.shock_response["source"] == "group")].index[0]
     kpis = dashboard.update_scenario_tab(small_fl[1], small_fl[0], 1)[0]
-    assert all("occupation group" in k.children[2].children for k in kpis if k.children[0].children == "2020 response") or len(kpis) == 2
+    assert "occupation group" in kpis[2].children[2].children
 
 
 def test_scenario_employment_never_goes_below_zero(dashboard, monkeypatch):
@@ -133,7 +140,7 @@ def test_scenario_employment_never_goes_below_zero(dashboard, monkeypatch):
 def test_scenario_without_a_2020_response_still_shows_the_baseline(dashboard, monkeypatch):
     monkeypatch.setattr(dashboard, "shock_for", lambda occ, region: None)
     kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 1)
-    assert len(kpis) == 2 and len(fig.data[0].y) == 2 and "No 2020 response" in summary
+    assert len(kpis) == 1 and len(fig.data[0].y) == 2 and "No 2020 response" in summary
 
 
 def test_scenario_with_no_forecast_says_why(dashboard):

@@ -84,18 +84,7 @@ The Predictive Scenarios tab does not use made-up elasticities. An earlier versi
 
 **What it shows.** Nationally, total employment in the 2020 release fell 5.3% (Florida 4.2%), against a pre-2020 trend of about +1.6% a year. Responses are very uneven: Waiters and Waitresses −25.3 points, Retail Salespersons −13.6, Cashiers −8.2, Registered Nurses −2.0. At full severity the baseline forecast for Retail Salespersons moves from +2.1% to −11.6%.
 
-**Limits.** It is one episode, and a different shock would hit different occupations. Each OEWS release pools three years of survey panels, so the 2020 release shows the shock smeared over time and the rebound, mostly in the 2022 release, is not included. The response of a small occupation's group may not fit that occupation. The risk labels on the tab are still the unvalidated thresholds described below.
-
-## Displacement risk scoring
-
-The full formula from the original brief is:
-
-```
-risk = 0.4*(contraction relative to national avg) + 0.3*(wage compression) 
-     + 0.2*(low hiring demand) + 0.1*(high separation rate)
-```
-
-The wage and separation-rate inputs the formula calls for now exist as real-wage and JOLTS data, but the formula was not implemented: it is unvalidated, the hiring-demand input needs job-posting volume (which this build doesn't collect, 20% of the weight), and the experiment above found no evidence that these signals predict employment changes. The Predictive Scenarios tab uses a simplified three-tier `LOW/MODERATE/HIGH` threshold on forecast growth alone (below −2% = MODERATE, below −10% = HIGH), clearly labeled as such in the UI. The thresholds are arbitrary and unvalidated. Applied to the shipped model's forecasts from 2025 features, 1,323 of 1,550 forecastable occupation-region rows come out LOW, 227 MODERATE and none HIGH.
+**Limits.** It is one episode, and a different shock would hit different occupations. Each OEWS release pools three years of survey panels, so the 2020 release shows the shock smeared over time and the rebound, mostly in the 2022 release, is not included. The response of a small occupation's group may not fit that occupation.
 
 ## Known limitations
 

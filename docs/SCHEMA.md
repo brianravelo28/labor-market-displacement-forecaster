@@ -2,7 +2,7 @@
 
 All processed files live in `data/processed/` and are **committed to the repo** so the deployed dashboard can run without re-downloading from BLS (the raw `data/raw/` archives are the git-ignored part). Regenerate them via the scripts in `data/` and `src/` — pipeline order is in the [README](../README.md#rebuild-everything-from-raw-bls-data-optional).
 
-Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below), `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)) and `overlap_test.json` (the 1/2/3-year-horizon test; see [METHODOLOGY.md](METHODOLOGY.md#model)).
+Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below), `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)), `overlap_test.json` (the 1/2/3-year-horizon test; see [METHODOLOGY.md](METHODOLOGY.md#model)) and `shock_2020_response.csv` (each occupation's observed 2020 employment response, used by the scenario tab; see [METHODOLOGY.md](METHODOLOGY.md#scenario-tool-a-replay-of-2020)).
 
 ## `oews_occupation_panel.csv`
 
