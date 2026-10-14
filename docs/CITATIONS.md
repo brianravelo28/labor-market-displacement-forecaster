@@ -21,5 +21,4 @@
 - Registration (raises the unregistered 25-queries/day limit to 500/day): https://data.bls.gov/registrationEngine/
 
 ## Tooling
-- LightGBM: https://lightgbm.readthedocs.io/
 - Plotly Dash: https://dash.plotly.com/

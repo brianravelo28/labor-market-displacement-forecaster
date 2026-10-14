@@ -1,26 +1,25 @@
-# Occupation Displacement Forecaster & Real Wage Tracker
+# Occupation Employment & Real Wage Tracker
 
-![Occupation Displacement Forecaster dashboard](docs/screenshot.png)
+![Occupation Employment & Real Wage Tracker dashboard](docs/screenshot.png)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Dash](https://img.shields.io/badge/dashboard-Plotly%20Dash-blue.svg)](https://dash.plotly.com/)
 [![tests](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml/badge.svg)](https://github.com/brianravelo28/labor-market-displacement-forecaster/actions/workflows/tests.yml)
 
-A labor-market analytics pipeline for occupation-level employment and wages, built on real BLS data (not synthetic), comparing the US with Florida as a whole. **Status: core build complete** — the four-tab dashboard is built and deployed; see [Status & Limitations](#status--limitations) for what is done and what isn't.
+A labor-market analytics pipeline and dashboard for occupation-level employment and wages, built on real BLS data (not synthetic), comparing the US with Florida as a whole. **Status: complete** — the four-tab dashboard is built and deployed; see [Status & Limitations](#status--limitations) for the data caveats.
 
 **Live dashboard: [labor-market-displacement-forecaster.onrender.com](https://labor-market-displacement-forecaster.onrender.com/)** — hosted on Render's free tier, which spins the app down when idle, so the first load after a quiet period can take up to a minute.
 
 ## Overview
 
-Which jobs are shrinking, and which are quietly losing purchasing power even while nominal pay rises? This project pulls BLS Occupational Employment and Wage Statistics (OEWS) into an 11-year annual panel (~800 occupations, national + statewide Florida), adds CPI-U inflation adjustment and JOLTS job-market tightness, trains a LightGBM model to forecast next-year employment, and ships an interactive dashboard for exploring the results — including a transparent, documented what-if scenario tool.
+Which jobs are shrinking, and which are quietly losing purchasing power even while nominal pay rises? This project pulls BLS Occupational Employment and Wage Statistics (OEWS) into an 11-year annual panel (~800 occupations, national + statewide Florida), adds CPI-U inflation adjustment and JOLTS job-market tightness, and ships an interactive dashboard for exploring the results. It describes what the data show; it makes no forecasts.
 
 **Results:**
 - 📊 **11-year OEWS panel**: 2015–2025, 789–831 occupations per year (17,587 occupation × region × year rows), national + statewide Florida
-- 🤖 **Employment forecaster, validated against "assume no change"**: LightGBM, walk-forward validated. On the 2025 OEWS release, which it never saw, the median error is 6.1% vs. 6.4% for simply assuming next year equals this year, and it is closer on 54% of 1,503 occupation-region rows. The edge is small and statistically unclear (95% bootstrap interval for the difference in median error: −0.6 to +0.0 points; in the four earlier walk-forward folds it was ahead on RMSE in three and on median error in three). Every model number in this repo is reported next to that baseline. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#model).
 - 💵 **Nominal raises mostly didn't keep up with inflation in 2021–22**: deflating each year's wages with May CPI-U, more than 80% of US occupations had a real wage decline in both 2021 and 2022 (85% in 2022), against 7% in 2020 and 32% in 2023. Across the whole 2015–2025 span the median US occupation's real wage rose just 0.8%, and 46% of occupations ended lower. (Retail Salespersons' real wage is essentially flat for a decade.) In 2025, 39% of US occupations and 45% of Florida occupations had a real wage decline.
-- 📈 **JOLTS tightness merged in, but it didn't make the forecast better**: JOLTS publishes job openings, quits and layoffs by industry only, so each occupation gets the rates of its industries weighted by where its employment sits. I tested real-wage and JOLTS inputs in the forecaster on the same walk-forward folds; none beat the OEWS-only inputs (median error 7.64% without them, 7.66–7.83% with them), so the shipped model doesn't use them. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#cpi-and-jolts).
-- 🐛 **Two earlier model versions failed and were fixed**: a level regression mispredicted the largest US occupation by ~60%, and its replacement trained on a single year (a feature that is empty before 2020 silently dropped every earlier row) and lost to "no change". Details in the methodology doc.
+- 📉 **The 2020 shock was very uneven, and the recovery has been too**: total employment in the 2020 release fell 5.3% nationally (4.2% in Florida) against a pre-2020 trend of about +1.6% a year. Against their own earlier trends, Waiters and Waitresses fell 25 points more, Retail Salespersons 14, Registered Nurses 2. For the occupations present in every release, employment in 2025 is 103% of its 2019 level nationally and 110% in Florida. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#2020-shock-and-recovery).
+- 📈 **JOLTS tightness merged in**: JOLTS publishes job openings, quits and layoffs by industry only, so each occupation gets the rates of its industries weighted by where its employment sits (Florida occupations use the national industry rates, since BLS publishes Florida JOLTS for total nonfarm only). See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#cpi-and-jolts).
 - 🗺️ **Unexpected finding**: Florida pays less than the national figure for the same job, not more. Compared head-to-head on 777 occupations, Florida's mean annual wage is a median 7.7% lower, and 84% of those occupations pay less in Florida (6.5% lower when weighted by Florida employment). The Regional Comparison tab's −11.4% is a different quantity: the gap between the two *medians across occupations*. Weighting by workers instead of occupations narrows the median-wage gap to −6.3% (and flips 2025 employment growth to +2.1% in Florida vs. +1.0% nationally), because a third of Florida's occupations have under 1,000 employees and their year-over-year changes are far noisier than those of large occupations. All nominal — not cost-of-living adjusted — contrary to the +3–8% regional premium the original project brief assumed. See [docs/METHODOLOGY.md](docs/METHODOLOGY.md#florida-vs-national-wages).
 - 🏭 **Industry-sector breakdown**: 20 NAICS sectors (143–641 occupations each in 2025, ~426 on average), 92,104 occupation × sector × year rows, national level
 
@@ -34,7 +33,7 @@ python app/app.py
 # -> http://localhost:8051
 ```
 
-The processed datasets and trained model are committed under `data/processed/`, so the dashboard runs immediately — no pipeline run required.
+The processed datasets are committed under `data/processed/`, so the dashboard runs immediately — no pipeline run required.
 
 ### Rebuild everything from raw BLS data (optional)
 
@@ -52,17 +51,8 @@ python data/fetch_cpi.py
 python src/build_features.py
 python src/build_industry_features.py
 
-# Walk-forward validation, baseline comparison, and refit of the forecaster
-# (writes the model and data/processed/model_metrics.json)
-python src/train_model.py
-
-# Observed 2020 response per occupation, for the scenario tab
+# Observed 2020 response per occupation, for the 2020 tab
 python src/build_shock_replay.py
-
-# Optional: re-run the test of whether CPI/JOLTS inputs help the forecaster,
-# and the 1/2/3-year-horizon test of whether the forecaster's edge is just survey overlap
-python src/feature_set_experiment.py
-python src/overlap_test.py
 ```
 
 The scripts self-identify to BLS with a `User-Agent` (BLS serves an "Access Denied" page to generic browser user agents). Before running the downloads, create a `.env` file in the repo root containing `BLS_CONTACT_EMAIL=you@example.com` (read by `src/config.py`; `.env` is git-ignored). `BLS_API_KEY` is optional; with a registered key the API allows far more queries and longer windows.
@@ -76,7 +66,7 @@ pip install -r requirements.txt pytest   # or requirements-dev.txt
 python -m pytest
 ```
 
-About 70 tests, a few seconds, no network access needed. They cover the year-matched lag logic and growth features, the CPI and JOLTS merges, the supervised-pair construction and the walk-forward rule (training never sees a target that wasn't yet known), the BLS fetchers (series IDs, the API's empty-success quirk, 10-year windows, 2015-style OEWS headers) and every dashboard callback. They also check the committed data and model against each other: unique keys, every year present, the shipped model's feature list matching the code that feeds it, `model_metrics.json` matching the data it was trained on, and the README's quoted holdout error matching the metrics. GitHub Actions runs them on Python 3.9 and 3.11 for every push and pull request. What they do not cover: whether the forecast is *good* (that is the validation in the methodology doc, not a test), the layout and look of the pages, and the live Render deployment.
+About 70 tests, a few seconds, no network access needed. They cover the year-matched lag logic and growth features, the CPI and JOLTS merges, the 2020 response calculation, the BLS fetchers (series IDs, the API's empty-success quirk, 10-year windows, 2015-style OEWS headers) and every dashboard callback. They also check the committed data: unique keys, every year present, real wages equal to nominal in the base year, and the 2020 response table matching what the current data produce. GitHub Actions runs them on Python 3.9 and 3.11 for every push and pull request. What they do not cover: the layout and look of the pages, and the live Render deployment.
 
 ### Explore the notebooks
 
@@ -84,8 +74,7 @@ About 70 tests, a few seconds, no network access needed. They cover the year-mat
 pip install -r requirements-dev.txt   # adds jupyter + matplotlib on top of requirements.txt
 jupyter notebook notebooks/
 ```
-- `01_eda_occupation_panel.ipynb` — employment/wage distributions, regional comparison, growth trends
-- `02_model_evaluation.ipynb` — walk-forward results against the no-change baseline, the 2025 holdout, feature importance, example occupations
+- `01_eda_occupation_panel.ipynb` — employment/wage distributions, regional comparison, growth trends, real wages
 
 ## Dashboard
 
@@ -96,7 +85,7 @@ jupyter notebook notebooks/
 | **Occupation Search** | Search any occupation, see employment history, nominal vs. inflation-adjusted wage history, YoY trends (employment, nominal wage, real wage), a contraction flag (employment down >2% YoY), and the JOLTS job-openings/quits/layoffs rates of the industries it works in, US or FL. |
 | **Regional Comparison** | US vs. Florida, counting either each occupation or each worker (employment-weighted) equally via a toggle: employment growth (median with 25th–75th percentile whiskers, since a median-only bar hid how much occupations actually vary), median wage level, the share of occupations with nominal and with real (after-CPI) wage decline, the share contracting, and the JOLTS job-openings rate |
 | **Industry & Sector Analysis** | Pick a NAICS sector, see its JOLTS openings, quits and layoffs rates, a real-or-nominal-wage-growth-vs-employment-change scatter (real by default; the toggle matters mainly for where the zero line falls) and top movers. Occupations under 500 employees within a sector — in either year compared — are excluded from the ranked tables (sampling noise), though still shown in the scatter |
-| **Predictive Scenarios** | The model's baseline forecast (with a note on how well it validated, and that it doesn't use CPI or JOLTS) plus a **replay of 2020**: one severity slider (0 to 1x) applies the employment response each occupation actually showed in the 2020 OEWS release (its change minus its 2016–2019 trend) on top of the baseline. It is one observed episode, not a fitted elasticity or a prediction; occupations under 10,000 employees borrow their occupation group's response, and the card says which was used |
+| **2020 Shock & Recovery** | Pick an occupation and region: employment indexed to the 2019 release (= 100) against the total for the occupations present in every release, the change in the 2020 release, employment now vs. 2019, and the occupation's 2020 response (its change minus its 2016–2019 trend); plus tables of the hardest-hit and most resilient occupations. Occupations under 10,000 employees show their occupation group's response instead, and the card says so |
 
 ## Deployment (Render)
 
@@ -109,11 +98,11 @@ The repo is Render-ready as-is:
    gunicorn app.app:server --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120
    ```
 
-**Why a threaded worker:** Dash fires every tab's callbacks as simultaneous requests on page load. With gunicorn's default single sync worker those requests queue one at a time, and on Render's free tier the LightGBM-loading Predictive Scenarios callback could wait long enough to hit the 30-second default timeout — surfacing as intermittent `502`s and a blank tab. Threads share the already-loaded data/model inside one process (unlike extra worker processes, which would each duplicate it).
+**Why a threaded worker:** Dash fires every tab's callbacks as simultaneous requests on page load. With gunicorn's default single sync worker those requests queue one at a time, and on Render's free tier a slow one could wait long enough to hit the 30-second default timeout — surfacing as intermittent `502`s and a blank tab. Threads share the already-loaded data inside one process (unlike extra worker processes, which would each duplicate it).
 
 **Gotcha:** for a service created manually, the Start Command lives in Render's dashboard settings — editing `Procfile`/`render.yaml` later does *not* change an existing service. Update it under **Settings > Start Command**.
 
-No environment variables or secrets are required — the dashboard reads only the processed CSVs and trained model committed under `data/processed/` (unlike the raw BLS archives, which are git-ignored; see [.gitignore](.gitignore) for why: Render can't reliably regenerate them at build time, since BLS's API has had multi-day outages).
+No environment variables or secrets are required — the dashboard reads only the processed CSVs committed under `data/processed/` (unlike the raw BLS archives, which are git-ignored; see [.gitignore](.gitignore) for why: Render can't reliably regenerate them at build time, since BLS's API has had multi-day outages).
 
 `app/app.py`'s `if __name__ == "__main__"` block is for local dev (`python app/app.py`; reads `PORT`/`DASH_DEBUG` env vars, defaults to port 8051 with debug on). In production, gunicorn serves `app.app:server` per the `Procfile`.
 
@@ -129,13 +118,13 @@ labor-market-displacement-forecaster/
 ├── LICENSE                 # MIT
 ├── .gitignore
 ├── data/                   # acquisition scripts (BLS OEWS/JOLTS/CPI fetchers) + processed/ (tracked, see Deployment)
-├── src/                    # feature engineering (incl. CPI/JOLTS merge), model training, feature-set experiment
-├── notebooks/              # EDA and model evaluation (executed, real outputs)
+├── src/                    # feature engineering (incl. CPI/JOLTS merge and the 2020 response)
+├── notebooks/              # EDA (executed, real outputs)
 ├── app/                    # Plotly Dash dashboard
 └── docs/                   # schema, methodology, data source citations
 ```
 
-See [docs/SCHEMA.md](docs/SCHEMA.md) for exact column definitions and [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the full data-architecture and modeling writeup.
+See [docs/SCHEMA.md](docs/SCHEMA.md) for exact column definitions and [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for the full data-architecture and methods writeup.
 
 ## Data Sources
 
@@ -147,10 +136,8 @@ Full citations and API documentation links: [docs/CITATIONS.md](docs/CITATIONS.m
 
 ## Status & Limitations
 
-- **Done**: OEWS annual panel (2015–2025) + engineered features, CPI-adjusted real wages and JOLTS tightness merged into the occupation and industry tables and shown on Tabs 1–3, industry-sector breakdown, LightGBM employment forecaster with walk-forward validation against a no-change baseline, dashboard Tabs 1–4 deployed on Render, 2 executed EDA/evaluation notebooks.
-- **Tested, not adopted**: real-wage and JOLTS features as forecaster inputs. They did not improve out-of-sample accuracy (see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#cpi-and-jolts)), so the forecast still runs on OEWS-only inputs.
-- **Scenario tool is a replay, not a model**: it re-applies each occupation's observed 2020 response; there are no fitted elasticities (see [docs/METHODOLOGY.md](docs/METHODOLOGY.md#scenario-tool-a-replay-of-2020)).
-- **OEWS is not built for year-over-year comparison.** BLS's own FAQ says the survey is designed for cross-sectional estimates and is "less useful for looking at changes over time", citing classification changes and its three-year pooled sample ([BLS: Can OEWS data be used to look at changes over time?](https://www.bls.gov/oes/oes_ques.htm)). Every growth rate on the dashboard and every forecast inherits that: the numbers are best read as directional, and consecutive releases share most of their underlying survey panels. A test of whether the forecaster's small edge survives when the releases don't overlap (forecasting 1, 2 and 3 years ahead) was inconclusive: the edge is no clearer at any horizon ([docs/METHODOLOGY.md](docs/METHODOLOGY.md#model)).
+- **Done**: OEWS annual panel (2015–2025) + engineered features, CPI-adjusted real wages and JOLTS tightness merged into the occupation and industry tables, industry-sector breakdown, the 2020 shock-and-recovery view, dashboard Tabs 1–4 deployed on Render, an executed EDA notebook, tests and CI.
+- **OEWS is not built for year-over-year comparison.** BLS's own FAQ says the survey is designed for cross-sectional estimates and is "less useful for looking at changes over time", citing classification changes and its three-year pooled sample ([BLS: Can OEWS data be used to look at changes over time?](https://www.bls.gov/oes/oes_ques.htm)). Every growth rate on the dashboard inherits that: the numbers are best read as directional, and consecutive releases share most of their underlying survey panels.
 - **Known data-quality caveats**: occupations with employment in the tens/hundreds show large YoY % swings from OEWS sampling variance — the sector tab filters these out of its rankings, but the notebook's top-movers tables don't. Some BLS estimates are carried forward unchanged between releases (in the 2024 release it pushed Florida's median employment growth to exactly 0.0%). Details in [docs/METHODOLOGY.md](docs/METHODOLOGY.md#known-limitations).
 - **Cadence**: annual, not monthly (OEWS is a point-in-time annual survey; see methodology doc for why the original monthly-cadence plan didn't match reality).
 

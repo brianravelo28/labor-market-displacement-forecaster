@@ -1,12 +1,10 @@
 """
-How each occupation responded to the 2020 shock, for the "replay 2020" scenario
-on the Predictive Scenarios tab.
+How each occupation responded to the 2020 shock, for the 2020 Shock & Recovery tab.
 
 Nothing here is a fitted elasticity. It is an observed episode: the change in an
 occupation's employment in the 2020 OEWS release, minus how fast the same
 occupation had been growing in the releases before it, so only the part that is
-plausibly the shock remains. The dashboard adds severity x that excess to the
-model's baseline forecast.
+plausibly the shock remains. It is a description of what happened, not a forecast.
 
 Reliability rule: a single occupation's year-over-year change is mostly
 sampling noise below about 10,000 employees (the standard deviation of annual
@@ -17,7 +15,7 @@ says which was used.
 
 Caveat built into the data: each OEWS release pools three years of survey
 panels, so the 2020 release shows the shock smeared and the rebound shows up
-mostly in the 2022 release. The replay covers the 2020 release only.
+mostly in the 2022 release. The response covers the 2020 release only.
 
 Writes data/processed/shock_2020_response.csv.
 """

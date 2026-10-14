@@ -1,19 +1,15 @@
 """
-Occupation Displacement Forecaster & Real Wage Tracker -- Dash app.
+Occupation Employment & Real Wage Tracker -- Dash app.
 
 Four tabs: Occupation Search, Regional Comparison (US vs FL), Industry &
-Sector Analysis, and Predictive Scenarios. Everything runs on the processed
-OEWS tables (with CPI-U inflation-adjusted wages and JOLTS job-market
-tightness merged in by src/build_macro_features.py) and the trained LightGBM
-model in data/processed/. The forecaster itself uses neither CPI nor JOLTS:
-tested as inputs, they did not improve out-of-sample accuracy (see
-src/feature_set_experiment.py and docs/METHODOLOGY.md).
+Sector Analysis, and 2020 Shock & Recovery. Everything runs on the processed
+OEWS tables in data/processed/, with CPI-U inflation-adjusted wages and JOLTS
+job-market tightness merged in by src/build_macro_features.py. The dashboard is
+descriptive: it reports what the data show and makes no forecasts.
 """
-import json
 from pathlib import Path
 
 import dash
-import lightgbm as lgb
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -22,7 +18,6 @@ from dash import Input, Output, dash_table, dcc, html
 PROCESSED_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
 DATA_PATH = PROCESSED_DIR / "oews_occupation_features.csv"
 INDUSTRY_DATA_PATH = PROCESSED_DIR / "oews_industry_features.csv"
-MODEL_PATH = PROCESSED_DIR / "employment_forecast_model.txt"
 SHOCK_PATH = PROCESSED_DIR / "shock_2020_response.csv"
 
 # Below this (in either the current or the prior year), an occupation's
@@ -30,19 +25,6 @@ SHOCK_PATH = PROCESSED_DIR / "shock_2020_response.csv"
 # swings are dominated by OEWS sampling noise rather than a real trend -- see
 # the ranking note in update_sector_tab.
 SECTOR_RANKING_MIN_EMPLOYMENT = 500
-
-# Must match src/train_model.py exactly (feature order/dtypes affect a saved
-# LightGBM booster's categorical split lookups).
-MODEL_FEATURE_COLS = [
-    "employment_level",
-    "wage_annual_mean",
-    "wage_annual_median",
-    "employment_change_yoy_pct",
-    "wage_growth_yoy_pct",
-    "contraction_flag_12mo",
-    "region",
-    "occ_major_group",
-]
 
 # Interactive charts hide the mode bar and get a hint line instead, since
 # displayModeBar=False makes drag-to-zoom/double-click-reset/legend-click
@@ -62,31 +44,30 @@ df = pd.read_csv(DATA_PATH)
 # Industry-sector extraction (Tab 3) re-parses the same large archives on a
 # separate schedule and may not have finished yet -- degrade gracefully.
 industry_df = pd.read_csv(INDUSTRY_DATA_PATH, dtype={"naics": str}) if INDUSTRY_DATA_PATH.exists() else None
-forecast_model = lgb.Booster(model_file=str(MODEL_PATH)) if MODEL_PATH.exists() else None
-# Observed 2020 employment response per occupation (src/build_shock_replay.py), for the scenario tab.
+# Observed 2020 employment response per occupation (src/build_shock_replay.py), for the 2020 tab.
 shock_response = pd.read_csv(SHOCK_PATH).set_index(["region", "occ_code"]) if SHOCK_PATH.exists() else None
 FIRST_YEAR, LATEST_YEAR = int(df["year"].min()), int(df["year"].max())
+BASE_YEAR = 2019  # the last release before the 2020 shock
 
 
-def _baseline_accuracy_note():
-    # Built from the committed training metrics so the claim can't drift from
-    # what train_model.py actually measured.
-    path = PROCESSED_DIR / "model_metrics.json"
-    try:
-        h = json.loads(path.read_text())["holdout"]
-        m, p = h["model"], h["persistence"]
-    except (OSError, KeyError, ValueError):
-        return "The baseline forecast is a statistical model; see the project README for how it was validated."
-    return (
-        f"How good is the baseline forecast? Tested on the {h['target_year']} data release, which the model had never "
-        f"seen, it was closer than simply assuming no change for {m['closer_than_persistence']:.0%} of occupations, "
-        f"with a median error of {m['median_ape']:.1f}% vs. {p['median_ape']:.1f}% for assuming no change. That edge "
-        f"is small and not statistically clear-cut. CPI and JOLTS data were tested as forecasting inputs "
-        f"and did not improve accuracy on earlier years, so the forecast does not use them."
-    )
+def _balanced_totals():
+    """Per region: total employment of the occupations present in every release, indexed to BASE_YEAR = 100.
+
+    Using one fixed set of occupations keeps the comparison line from moving just because
+    SOC code changes added or dropped occupations along the way."""
+    out = {}
+    for region, g in df.dropna(subset=["employment_level"]).groupby("region"):
+        years = sorted(g["year"].unique())
+        present = g.groupby("occ_code")["year"].nunique()
+        codes = present[present == len(years)].index
+        totals = g[g["occ_code"].isin(codes)].groupby("year")["employment_level"].sum()
+        out[region] = (totals / totals.loc[BASE_YEAR] * 100, len(codes))
+    return out
 
 
-BASELINE_ACCURACY_NOTE = _baseline_accuracy_note()
+BALANCED_TOTALS = _balanced_totals()
+
+
 occ_options = (
     df[["occ_code", "occ_title"]]
     .drop_duplicates()
@@ -96,7 +77,7 @@ occ_options = (
 DEFAULT_OCC = df.loc[df["employment_level"].idxmax(), "occ_code"]
 
 app = dash.Dash(__name__)
-app.title = "Occupation Displacement Forecaster & Real Wage Tracker"
+app.title = "Occupation Employment & Real Wage Tracker"
 server = app.server  # exposes the underlying Flask app for gunicorn (see Procfile)
 
 tab1_content = html.Div(
@@ -223,65 +204,63 @@ else:
         children="Industry-sector data not yet available (still parsing OEWS archives -- rerun src/fetch_oews_industry.py then reload).",
     )
 
-# dcc.Slider centers each mark's label on its tick position, so the outermost
-# labels render partly outside the slider's own box and can be clipped.
-# Padding the slider inside its own wrapper (rather than relying on Dash's
-# internal slider CSS class names, which could change) gives that overflow
-# somewhere real to go.
-SLIDER_WRAPPER_STYLE = {"padding": "0 24px"}
-SEVERITY_MARKS = {0: "none", 0.25: "0.25x", 0.5: "0.5x", 0.75: "0.75x", 1: "1x (as in 2020)"}
-
 tab4_content = html.Div(
     children=[
         html.P(
-            "Replay of 2020: shows the model's baseline forecast plus the employment response each "
-            "occupation actually had in the 2020 OEWS release, scaled by the severity slider (1x = the full "
-            "response). The response is the occupation's 2020 change minus how fast it had been growing in "
-            "2016-2019, so only the part plausibly due to the shock is applied. This is one observed episode, "
-            "not a fitted elasticity and not a prediction that a similar shock is coming.",
+            "How did occupations fare when the 2020 recession hit, and how far have they come back? Employment is "
+            f"shown relative to the {BASE_YEAR} release (= 100). The 2020 response is the occupation's change in the "
+            "2020 release minus how fast it had been growing in 2016-2019, so only the part plausibly due to the "
+            "shock remains.",
             style={"color": "#666", "marginTop": "20px"},
         ),
         html.P(
             "Two cautions. Each OEWS release pools three years of survey data, so the 2020 release shows the "
-            "shock smeared out and the rebound (mostly in the 2022 release) is not included. And an occupation's "
-            "own year-to-year change is very noisy below about 10,000 employees, so smaller occupations use "
-            "their occupation group's response instead (the card says which was used).",
+            "shock smeared out and the rebound arrives mostly in the 2022 release. And an occupation's own "
+            "year-to-year change is very noisy below about 10,000 employees, so smaller occupations show their "
+            "occupation group's response instead (the card says which was used).",
             style={"color": "#888", "fontSize": "13px"},
         ),
-        html.P(BASELINE_ACCURACY_NOTE, style={"color": "#666", "fontSize": "13px"}),
-        dcc.Dropdown(
-            id="scenario-occ-dropdown",
-            options=[{"label": row.label, "value": row.occ_code} for row in occ_options.itertuples()],
-            value=DEFAULT_OCC,
-            style={"maxWidth": "500px", "marginBottom": "12px"},
-        ),
-        dcc.RadioItems(
-            id="scenario-region-toggle",
-            options=[{"label": " National (US)", "value": "US"}, {"label": " Florida", "value": "FL"}],
-            value="US",
-            inline=True,
-            style={"marginBottom": "20px"},
-        ),
         html.Div(
-            style={"maxWidth": "600px"},
+            style={"display": "flex", "gap": "16px", "marginBottom": "20px", "alignItems": "center", "marginTop": "16px"},
             children=[
-                html.Label("Severity of a 2020-style shock"),
-                html.Div(
-                    dcc.Slider(id="severity-slider", min=0, max=1, step=0.05, value=0, marks=SEVERITY_MARKS),
-                    style=SLIDER_WRAPPER_STYLE,
+                dcc.Dropdown(
+                    id="shock-occ-dropdown",
+                    options=[{"label": row.label, "value": row.occ_code} for row in occ_options.itertuples()],
+                    value=DEFAULT_OCC,
+                    style={"flex": "1", "minWidth": "320px"},
+                    placeholder="Search for an occupation...",
+                ),
+                dcc.RadioItems(
+                    id="shock-region-toggle",
+                    options=[{"label": " National (US)", "value": "US"}, {"label": " Florida", "value": "FL"}],
+                    value="US",
+                    inline=True,
                 ),
             ],
         ),
-        html.Div(id="scenario-kpi-row", style={"display": "flex", "flexWrap": "wrap", "gap": "16px", "margin": "24px 0"}),
-        dcc.Graph(id="scenario-chart", config=NO_MODEBAR),
-        html.P(id="scenario-summary", style={"fontStyle": "italic", "color": "#444"}),
+        html.Div(id="shock-kpi-row", style={"display": "grid", "gridTemplateColumns": "repeat(auto-fit, minmax(160px, 1fr))", "gap": "16px", "marginBottom": "24px"}),
+        dcc.Graph(id="shock-chart", config=NO_MODEBAR),
+        chart_hint(has_legend=True),
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px", "marginTop": "8px"},
+            children=[
+                html.Div([html.H4("Hardest hit in 2020"), html.Div(id="shock-hardest")]),
+                html.Div([html.H4("Most resilient in 2020"), html.Div(id="shock-resilient")]),
+            ],
+        ),
+        html.P(
+            "The two tables list occupations with at least 10,000 employees (their own response, not their "
+            "group's) in the selected region, leaving out the \"All Other\" residual categories, which don't describe a "
+            "single job. Differences of a few points are within the survey's sampling noise; the large ones are the signal.",
+            style={"color": "#888", "fontSize": "12px"},
+        ),
     ]
 )
 
 app.layout = html.Div(
     style={"fontFamily": "Segoe UI, Arial, sans-serif", "maxWidth": "1100px", "margin": "0 auto", "padding": "24px"},
     children=[
-        html.H1("Occupation Displacement Forecaster & Real Wage Tracker", style={"marginBottom": "4px"}),
+        html.H1("Occupation Employment & Real Wage Tracker", style={"marginBottom": "4px"}),
         html.P(
             f"BLS OEWS data, {FIRST_YEAR}-{LATEST_YEAR} (annual), with CPI-U inflation adjustment and "
             "JOLTS job-market tightness.",
@@ -294,7 +273,7 @@ app.layout = html.Div(
                 dcc.Tab(label="Occupation Search", value="tab-1", children=[tab1_content]),
                 dcc.Tab(label="Regional Comparison (US vs FL)", value="tab-2", children=[tab2_content]),
                 dcc.Tab(label="Industry & Sector Analysis", value="tab-3", children=[tab3_content]),
-                dcc.Tab(label="Predictive Scenarios", value="tab-4", children=[tab4_content]),
+                dcc.Tab(label="2020 Shock & Recovery", value="tab-4", children=[tab4_content]),
             ],
         ),
     ],
@@ -570,6 +549,7 @@ def movers_table(rows):
         ],
         data=rows.to_dict("records"),
         style_cell={"fontFamily": "Segoe UI, Arial, sans-serif", "fontSize": "13px", "padding": "4px 8px"},
+        style_cell_conditional=[{"if": {"column_id": "occ_title"}, "textAlign": "left"}],
         style_as_list_view=True,
     )
 
@@ -659,7 +639,7 @@ if industry_df is not None:
 
 
 def shock_for(occ_code, region):
-    """(response in percentage points, source) for the 2020 replay, or None if unavailable."""
+    """(response in percentage points, source) for the 2020 tab, or None if unavailable."""
     if shock_response is None or (region, occ_code) not in shock_response.index:
         return None
     row = shock_response.loc[(region, occ_code)]
@@ -668,98 +648,91 @@ def shock_for(occ_code, region):
     return float(row["response_pct"]), row["source"]
 
 
-def predict_baseline(occ_code, region):
-    sub = df[(df["occ_code"] == occ_code) & (df["region"] == region)].sort_values("year")
-    if sub.empty or forecast_model is None:
-        return None
-    latest = sub.iloc[-1].copy()
-    # The model was trained only on rows with every input present, so a missing
-    # input (e.g. an occupation with no prior-year value) gets no forecast
-    # rather than an arbitrary one.
-    inputs = ["employment_level", "wage_annual_mean", "wage_annual_median",
-              "employment_change_yoy_pct", "wage_growth_yoy_pct", "contraction_flag_12mo"]
-    if latest[inputs].isna().any():
-        return None
-    row = pd.DataFrame([{
-        **{c: float(latest[c]) for c in inputs},
-        "region": str(region),
-        "occ_major_group": str(occ_code)[:2],
-    }])
-    row["region"] = row["region"].astype("category")
-    row["occ_major_group"] = row["occ_major_group"].astype("category")
-    # Model predicts log growth ratio, not absolute level -- see src/train_model.py
-    # for why (absolute-level regression badly mispredicts the handful of
-    # multi-million-employee occupations, which are extremely sparse in training data).
-    # Its accuracy against a "no change" baseline is in data/processed/model_metrics.json.
-    predicted_log_growth = float(forecast_model.predict(row[MODEL_FEATURE_COLS])[0])
-    baseline_employment_next = float(latest["employment_level"] * np.exp(predicted_log_growth))
-    baseline_growth_pct = (baseline_employment_next / latest["employment_level"] - 1) * 100
-    return {
-        "occ_title": latest["occ_title"],
-        "current_employment": latest["employment_level"],
-        "current_year": int(latest["year"]),
-        "baseline_employment_next": baseline_employment_next,
-        "baseline_growth_pct": baseline_growth_pct,
-    }
+def response_table(rows):
+    if rows.empty:
+        return html.P("No data.", style={"color": "#999"})
+    return dash_table.DataTable(
+        columns=[
+            {"name": "Occupation", "id": "occ_title"},
+            {"name": f"Employment ({LATEST_YEAR})", "id": "employment_level", "type": "numeric", "format": {"specifier": ",.0f"}},
+            {"name": "2020 response (pts)", "id": "response_pct", "type": "numeric", "format": {"specifier": "+.1f"}},
+        ],
+        data=rows.to_dict("records"),
+        style_cell={"fontFamily": "Segoe UI, Arial, sans-serif", "fontSize": "13px", "padding": "4px 8px"},
+        style_cell_conditional=[{"if": {"column_id": "occ_title"}, "textAlign": "left"}],
+        style_as_list_view=True,
+    )
+
+
+def own_response_rows(region):
+    """Occupations whose own (not group) 2020 response is reliable, with their latest employment."""
+    if shock_response is None:
+        return pd.DataFrame(columns=["occ_title", "employment_level", "response_pct"])
+    own = shock_response.xs(region, level="region")
+    own = own[own["source"] == "occupation"]
+    latest = df[(df["region"] == region) & (df["year"] == LATEST_YEAR)].set_index("occ_code")
+    rows = own.join(latest[["occ_title", "employment_level"]], how="inner").reset_index()
+    # "All Other" residual categories don't describe a single job, so they are left out of the lists
+    rows = rows[~rows["occ_title"].str.contains("All Other", regex=False)]
+    return rows[["occ_title", "employment_level", "response_pct"]]
+
+
+@app.callback(
+    Output("shock-kpi-row", "children"),
+    Output("shock-chart", "figure"),
+    Output("shock-hardest", "children"),
+    Output("shock-resilient", "children"),
+    Input("shock-occ-dropdown", "value"),
+    Input("shock-region-toggle", "value"),
+)
+def update_shock_tab(occ_code, region):
+    rows = own_response_rows(region)
+    hardest = response_table(rows.nsmallest(10, "response_pct"))
+    resilient = response_table(rows.nlargest(10, "response_pct"))
+
+    sub = df[(df["occ_code"] == occ_code) & (df["region"] == region)].sort_values("year").set_index("year")["employment_level"]
+    if sub.empty or pd.isna(sub.get(BASE_YEAR)) or pd.isna(sub.get(BASE_YEAR + 1)):
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="No 2019/2020 data for this occupation in the selected region")
+        return [kpi_card("No data", "--", f"needs employment in the {BASE_YEAR} and {BASE_YEAR + 1} releases")], empty_fig, hardest, resilient
+
+    base = sub[BASE_YEAR]
+    change_2020 = (sub[BASE_YEAR + 1] / base - 1) * 100
+    latest = sub.get(LATEST_YEAR)
+    recovery = (latest / base - 1) * 100 if pd.notna(latest) else None
+    shock = shock_for(occ_code, region)
+
+    kpis = [
+        kpi_card(f"Employment, {BASE_YEAR} release", f"{base:,.0f}"),
+        kpi_card(f"Change in the {BASE_YEAR + 1} release", f"{change_2020:+.1f}%", color=growth_color(change_2020)),
+        kpi_card(f"{LATEST_YEAR} vs {BASE_YEAR}", f"{recovery:+.1f}%" if recovery is not None else "n/a",
+                 "employment now vs. before the shock", color=growth_color(recovery) if recovery is not None else "#222"),
+    ]
+    if shock is not None:
+        response_pts, source = shock
+        note = ("this occupation's own 2020 change vs. its 2016-2019 trend" if source == "occupation"
+                else "its occupation group's change (this occupation is too small for its own)")
+        kpis.append(kpi_card("2020 response vs trend", f"{response_pts:+.1f} pts", note, color=growth_color(response_pts)))
+
+    index = sub.dropna() / base * 100
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=index.index, y=index.values, mode="lines+markers", name="This occupation"))
+    totals, n_codes = BALANCED_TOTALS[region]
+    fig.add_trace(go.Scatter(x=totals.index, y=totals.values, mode="lines", name=f"All occupations present in every release ({n_codes})",
+                             line=dict(dash="dot", color="#888")))
+    fig.add_hline(y=100, line_color="#ccc")
+    fig.add_vline(x=BASE_YEAR + 1, line_color="#e07b39", line_dash="dash")
+    fig.update_layout(
+        title=f"Employment, {BASE_YEAR} release = 100 — {df.loc[df['occ_code'] == occ_code, 'occ_title'].iloc[0]} ({region})",
+        yaxis_title=f"Index ({BASE_YEAR} = 100)",
+        margin=dict(t=70),
+        legend=dict(orientation="h", y=1.1, x=0),
+    )
+    return kpis, fig, hardest, resilient
 
 
 def growth_color(growth_pct):
     return "#c0392b" if growth_pct < 0 else "#27ae60"
-
-
-@app.callback(
-    Output("scenario-kpi-row", "children"),
-    Output("scenario-chart", "figure"),
-    Output("scenario-summary", "children"),
-    Input("scenario-occ-dropdown", "value"),
-    Input("scenario-region-toggle", "value"),
-    Input("severity-slider", "value"),
-)
-def update_scenario_tab(occ_code, region, severity):
-    baseline = predict_baseline(occ_code, region)
-    if baseline is None:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(title="No forecast for this selection")
-        return [], empty_fig, (
-            "No forecast: this occupation/region needs employment and wage values for the latest "
-            "two consecutive years, and at least one is missing."
-        )
-
-    base_growth = baseline["baseline_growth_pct"]
-    shock = shock_for(occ_code, region)
-
-    kpis = [kpi_card("Baseline forecast growth", f"{base_growth:+.1f}%", "model prediction, no scenario", color=growth_color(base_growth))]
-    labels, values, colors = ["Current", "Baseline forecast"], [baseline["current_employment"], baseline["baseline_employment_next"]], ["#999", "#4a90d9"]
-
-    if shock is None:
-        summary = "No 2020 response is available for this occupation/region, so only the baseline forecast is shown."
-    else:
-        response_pts, source = shock
-        scenario_growth = max(base_growth + (severity or 0) * response_pts, -100.0)
-        scenario_employment = baseline["current_employment"] * (1 + scenario_growth / 100)
-        source_note = ("this occupation's own 2020 change vs. its earlier trend" if source == "occupation"
-                       else "its occupation group's 2020 change (too small for its own)")
-        kpis += [
-            kpi_card("Scenario forecast growth", f"{scenario_growth:+.1f}%", f"baseline + {severity or 0:.2f} x 2020 response", color=growth_color(scenario_growth)),
-            kpi_card("2020 response", f"{response_pts:+.1f} pts", source_note),
-        ]
-        labels.append("Scenario forecast")
-        values.append(scenario_employment)
-        colors.append("#e07b39")
-        summary = (
-            f"At {severity:.2f}x the 2020 response, forecast growth for {baseline['occ_title']} moves from "
-            f"{base_growth:+.1f}% to {scenario_growth:+.1f}%."
-            if severity
-            else f"With no shock applied, forecast growth for {baseline['occ_title']} is the model's baseline, {base_growth:+.1f}%."
-        )
-
-    fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors, text=[f"{v:,.0f}" for v in values], textposition="outside"))
-    fig.update_layout(
-        title=f"Employment: current vs baseline vs scenario — {baseline['occ_title']} ({region})",
-        yaxis_title="Employment",
-        margin=dict(t=50),
-    )
-    return kpis, fig, summary
 
 
 if __name__ == "__main__":

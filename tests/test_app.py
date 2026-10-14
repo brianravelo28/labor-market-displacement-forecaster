@@ -77,88 +77,84 @@ def test_sector_tab_shows_three_jolts_rates(dashboard):
     assert [c.children[0].children for c in cards] == ["Job openings rate", "Quits rate", "Layoffs & discharges rate"]
 
 
-# ---- Tab 4 -----------------------------------------------------------------
+# ---- Tab 4: 2020 shock and recovery ----------------------------------------------
 
-def test_baseline_forecast_for_a_large_occupation_is_plausible(dashboard):
-    b = dashboard.predict_baseline(RETAIL, "US")
-    assert -30 < b["baseline_growth_pct"] < 30
-    assert b["baseline_employment_next"] == pytest.approx(b["current_employment"] * (1 + b["baseline_growth_pct"] / 100))
+def card(kpis, label):
+    return next(k for k in kpis if k.children[0].children.startswith(label))
 
 
-def test_no_forecast_when_an_input_is_missing(dashboard):
-    df = dashboard.df
-    latest = df[df["year"] == df["year"].max()]
-    inputs = ["employment_level", "wage_annual_mean", "wage_annual_median", "employment_change_yoy_pct",
-              "wage_growth_yoy_pct", "contraction_flag_12mo"]
-    incomplete = latest[latest[inputs].isna().any(axis=1)].iloc[0]
-    assert dashboard.predict_baseline(incomplete["occ_code"], incomplete["region"]) is None
+def card_value(kpis, label):
+    return card(kpis, label).children[1].children
 
 
-def test_the_scenario_tab_shows_growth_numbers_not_risk_labels(dashboard):
-    kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 1)
-    labels = [k.children[0].children for k in kpis]
-    assert labels == ["Baseline forecast growth", "Scenario forecast growth", "2020 response"]
-    assert not hasattr(dashboard, "risk_level")
-    assert "risk" not in summary.lower() and "forecast growth for" in summary and "moves from" in summary
+def test_the_tab_is_descriptive_with_no_forecast_controls(dashboard):
+    ids = {getattr(c, "id", None) for c in dashboard.app.layout._traverse()}
+    assert {"shock-occ-dropdown", "shock-region-toggle", "shock-chart"} <= ids
+    assert not {"severity-slider", "gdp-slider", "automation-slider", "immigration-slider"} & ids
+    for name in ("predict_baseline", "forecast_model", "risk_level", "BASELINE_ACCURACY_NOTE"):
+        assert not hasattr(dashboard, name)
 
 
 def test_growth_numbers_are_red_when_negative_and_green_otherwise(dashboard):
     assert dashboard.growth_color(-0.1) == "#c0392b" and dashboard.growth_color(0.0) == "#27ae60"
 
 
-def test_scenario_is_baseline_plus_severity_times_the_2020_response(dashboard):
-    response, source = dashboard.shock_for(RETAIL, "US")
-    base_kpis, *_ = dashboard.update_scenario_tab(RETAIL, "US", 0)
-    kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 0.5)
-    base = float(text(base_kpis[0]).rstrip("%"))
-    assert float(text(base_kpis[1]).rstrip("%")) == pytest.approx(base)          # severity 0 changes nothing
-    assert float(text(kpis[1]).rstrip("%")) == pytest.approx(base + 0.5 * response, abs=0.11)
-    assert len(fig.data[0].y) == 3
+def test_cards_match_the_published_employment_figures(dashboard, occupation_features):
+    f = occupation_features
+    us = f[(f["region"] == "US") & (f["occ_code"] == RETAIL)].set_index("year")["employment_level"]
+    kpis, fig, *_ = dashboard.update_shock_tab(RETAIL, "US")
+    assert card_value(kpis, "Employment, 2019").replace(",", "") == f"{us[2019]:.0f}"
+    assert float(card_value(kpis, "Change in the 2020").rstrip("%")) == pytest.approx((us[2020] / us[2019] - 1) * 100, abs=0.06)
+    assert float(card_value(kpis, "2025 vs 2019").rstrip("%")) == pytest.approx((us[2025] / us[2019] - 1) * 100, abs=0.06)
 
 
-def test_full_severity_lowers_a_hard_hit_occupation_but_barely_moves_a_resilient_one(dashboard):
-    waiters = dashboard.update_scenario_tab("35-3031", "US", 1)[0]
-    nurses = dashboard.update_scenario_tab("29-1141", "US", 1)[0]
-    assert float(text(waiters[1]).rstrip("%")) < float(text(waiters[0]).rstrip("%")) - 15
-    assert abs(float(text(nurses[1]).rstrip("%")) - float(text(nurses[0]).rstrip("%"))) < 5
+def test_chart_is_indexed_to_2019_and_compares_with_the_balanced_total(dashboard):
+    _, fig, *_ = dashboard.update_shock_tab(RETAIL, "US")
+    own, total = fig.data
+    assert dict(zip(own.x, own.y))[2019] == pytest.approx(100.0)
+    assert dict(zip(total.x, total.y))[2019] == pytest.approx(100.0)
+    assert [t.name for t in fig.data][0] == "This occupation"
+    # the comparison set is fixed, so it cannot move because occupations were added or dropped
+    totals, n = dashboard.BALANCED_TOTALS["US"]
+    assert n > 600 and totals.index.min() == dashboard.FIRST_YEAR and totals.index.max() == dashboard.LATEST_YEAR
 
 
-def test_scenario_shows_where_the_response_came_from(dashboard):
-    big = dashboard.update_scenario_tab(RETAIL, "US", 1)[0]
-    assert "own 2020 change" in big[2].children[2].children
-    small_fl = dashboard.shock_response[(dashboard.shock_response["source"] == "group")].index[0]
-    kpis = dashboard.update_scenario_tab(small_fl[1], small_fl[0], 1)[0]
-    assert "occupation group" in kpis[2].children[2].children
+def test_a_hard_hit_occupation_fell_more_than_a_resilient_one(dashboard):
+    waiters = dashboard.update_shock_tab("35-3031", "US")[0]
+    nurses = dashboard.update_shock_tab("29-1141", "US")[0]
+    assert float(card_value(waiters, "Change in the 2020").rstrip("%")) < float(card_value(nurses, "Change in the 2020").rstrip("%")) - 10
+    assert float(card_value(waiters, "2020 response").split()[0]) < -10
 
 
-def test_scenario_employment_never_goes_below_zero(dashboard, monkeypatch):
-    monkeypatch.setattr(dashboard, "shock_for", lambda occ, region: (-500.0, "occupation"))
-    kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 1)
-    assert fig.data[0].y[2] >= 0
+def test_the_card_says_where_the_response_came_from(dashboard):
+    own = dashboard.update_shock_tab(RETAIL, "US")[0]
+    assert "own 2020 change" in card(own, "2020 response").children[2].children
+    group_rows = dashboard.shock_response[dashboard.shock_response["source"] == "group"]
+    region, code = next((r, c) for r, c in group_rows.index if not dashboard.df[(dashboard.df["occ_code"] == c) & (dashboard.df["region"] == r) & (dashboard.df["year"] == 2019)].empty
+                        and not dashboard.df[(dashboard.df["occ_code"] == c) & (dashboard.df["region"] == r) & (dashboard.df["year"] == 2020)].empty)
+    borrowed = dashboard.update_shock_tab(code, region)[0]
+    assert "occupation group" in card(borrowed, "2020 response").children[2].children
 
 
-def test_scenario_without_a_2020_response_still_shows_the_baseline(dashboard, monkeypatch):
-    monkeypatch.setattr(dashboard, "shock_for", lambda occ, region: None)
-    kpis, fig, summary = dashboard.update_scenario_tab(RETAIL, "US", 1)
-    assert len(kpis) == 1 and len(fig.data[0].y) == 2 and "No 2020 response" in summary
+def test_an_occupation_without_2019_data_says_so(dashboard):
+    kpis, fig, hardest, resilient = dashboard.update_shock_tab("00-0000", "US")
+    assert kpis[0].children[1].children == "--" and fig.layout.title.text.startswith("No 2019/2020 data")
+    assert hardest is not None and resilient is not None            # the two tables still render
 
 
-def test_scenario_with_no_forecast_says_why(dashboard):
-    kpis, fig, summary = dashboard.update_scenario_tab("00-0000", "US", 0)
-    assert kpis == [] and summary.startswith("No forecast")
-
-
-def test_tab_has_one_slider_and_no_invented_adjustments(dashboard):
-    ids = {getattr(c, "id", None) for c in dashboard.app.layout._traverse()}
-    assert "severity-slider" in ids
-    assert not {"gdp-slider", "automation-slider", "immigration-slider"} & ids
-
-
-def test_accuracy_note_quotes_the_training_metrics(dashboard):
-    import json
-
-    h = json.loads((dashboard.PROCESSED_DIR / "model_metrics.json").read_text())["holdout"]
-    assert f"{h['model']['median_ape']:.1f}%" in dashboard.BASELINE_ACCURACY_NOTE
+def test_tables_list_only_reliable_own_responses_in_the_selected_region(dashboard):
+    for region in ("US", "FL"):
+        *_, hardest, resilient = dashboard.update_shock_tab(RETAIL, region)
+        own = dashboard.shock_response.xs(region, level="region")
+        own_codes = set(own[own["source"] == "occupation"].index)
+        titles = dashboard.df[(dashboard.df["region"] == region) & dashboard.df["occ_code"].isin(own_codes)]["occ_title"].unique()
+        for table in (hardest, resilient):
+            assert len(table.data) == 10
+            assert {r["occ_title"] for r in table.data} <= set(titles)
+            assert not any("All Other" in r["occ_title"] for r in table.data)
+        assert [r["response_pct"] for r in hardest.data] == sorted(r["response_pct"] for r in hardest.data)
+        assert hardest.data[0]["response_pct"] < 0 < resilient.data[0]["response_pct"] + 100
+        assert max(r["response_pct"] for r in hardest.data) <= min(r["response_pct"] for r in resilient.data)
 
 
 # ---- chart hints -----------------------------------------------------------

@@ -15,8 +15,7 @@ BLS publishes Florida JOLTS for total nonfarm only; the Florida total-nonfarm
 series enters separately as a regional-tightness feature.
 
 Each JOLTS annual figure is the mean of the available months in the OEWS
-reference calendar year (data through December, so known before the next May
-release, which is what the forecaster predicts).
+reference calendar year (data through December of that year).
 """
 from typing import Optional
 

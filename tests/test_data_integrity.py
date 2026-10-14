@@ -1,12 +1,9 @@
-"""Invariants on the committed data/processed files and the model trained from them."""
-import json
+"""Invariants on the committed data/processed files."""
 import re
 
-import lightgbm as lgb
 import pandas as pd
 import pytest
 
-import train_model as tm
 from config import OEWS_SECTOR_NAICS_CODES, OEWS_YEARS
 
 from conftest import PROCESSED, ROOT
@@ -59,29 +56,6 @@ def test_real_wage_equals_nominal_in_the_base_year(occupation_features):
     f = occupation_features
     base = f[f["year"] == f["year"].max()].dropna(subset=["wage_annual_mean"])
     assert (base["wage_annual_mean_real"] - base["wage_annual_mean"]).abs().max() < 1e-6
-
-
-def test_shipped_model_matches_the_code_that_feeds_it():
-    booster = lgb.Booster(model_file=str(PROCESSED / "employment_forecast_model.txt"))
-    assert booster.feature_name() == tm.FEATURE_COLS
-
-
-def test_metrics_describe_the_committed_data_and_model(occupation_features):
-    metrics = json.loads((PROCESSED / "model_metrics.json").read_text())
-    data = tm.build_supervised(occupation_features)
-    assert metrics["pairs"] == len(data), "model_metrics.json is stale: rerun src/train_model.py"
-    assert metrics["feature_years"] == [int(data["year"].min()), int(data["year"].max())]
-    holdout = metrics["holdout"]
-    assert holdout["model"]["n"] == int((data["year"] == holdout["feature_year"]).sum())
-    booster = lgb.Booster(model_file=str(PROCESSED / "employment_forecast_model.txt"))
-    assert booster.num_trees() == metrics["shipped_trees"]
-
-
-def test_readme_quotes_the_holdout_numbers_that_training_measured():
-    h = json.loads((PROCESSED / "model_metrics.json").read_text())["holdout"]
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    quoted = f"{h['model']['median_ape']:.1f}% vs. {h['persistence']['median_ape']:.1f}%"
-    assert quoted in readme, f"README no longer matches model_metrics.json (expected '{quoted}')"
 
 
 def test_public_docs_never_mention_the_private_quirks_file():

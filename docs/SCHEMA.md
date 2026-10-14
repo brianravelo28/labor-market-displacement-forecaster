@@ -2,7 +2,7 @@
 
 All processed files live in `data/processed/` and are **committed to the repo** so the deployed dashboard can run without re-downloading from BLS (the raw `data/raw/` archives are the git-ignored part). Regenerate them via the scripts in `data/` and `src/` — pipeline order is in the [README](../README.md#rebuild-everything-from-raw-bls-data-optional).
 
-Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below), `feature_set_experiment.json` (the test of CPI/JOLTS model inputs; see [METHODOLOGY.md](METHODOLOGY.md#cpi-and-jolts)), `overlap_test.json` (the 1/2/3-year-horizon test; see [METHODOLOGY.md](METHODOLOGY.md#model)) and `shock_2020_response.csv` (each occupation's observed 2020 employment response, used by the scenario tab; see [METHODOLOGY.md](METHODOLOGY.md#scenario-tool-a-replay-of-2020)).
+Also tracked: `jolts_industry_panel.csv` and `cpi_monthly.csv` (BLS API pulls, below) and `shock_2020_response.csv` (each occupation's observed 2020 employment response, used by the 2020 tab; below).
 
 ## `oews_occupation_panel.csv`
 
@@ -75,13 +75,13 @@ The features file also has `wage_annual_mean_real`, `real_wage_growth_yoy_pct` a
 
 92,104 rows: 20 sectors × 11 years, with 143–641 detailed occupations present per sector in 2025 (about 426 on average) — most occupations don't appear in most sectors, so this is far smaller than 20 × ~800 × 10. About 8,200–8,600 rows per year (8,527 in 2025). Sector titles aren't stable across releases: NAICS `99` (government) carries four different `naics_title` strings across the 11 years, so group on `naics`, not `naics_title` (the dashboard uses the most recent year's title). State-level industry breakdowns are excluded — OEWS suppresses too many state x sector x detailed-occupation cells to build a reliable Florida-specific version.
 
-## `employment_forecast_model.txt`
+## `shock_2020_response.csv`
 
-A saved LightGBM booster (text format), 75 trees. **Predicts log employment growth ratio, not absolute employment level** — see [METHODOLOGY.md](METHODOLOGY.md#model) for why. Reconstruct the level forecast as `employment_level * exp(model.predict(features))`. Refit on every available pair (feature years 2016–2024), so it is applied to 2025 features to forecast 2026.
+Each occupation's observed employment response to the 2020 shock, by region (built by `src/build_shock_replay.py`; see [METHODOLOGY.md](METHODOLOGY.md#2020-shock-and-recovery)).
 
-Feature columns (order matters for the saved categorical encoding):
-`employment_level, wage_annual_mean, wage_annual_median, employment_change_yoy_pct, wage_growth_yoy_pct, contraction_flag_12mo, region, occ_major_group` (the last two are categorical; `occ_major_group` is `occ_code[:2]`; `contraction_flag_12mo` is passed as a float). The 5-year CAGR columns exist in the feature table but are not model inputs.
-
-## `model_metrics.json`
-
-Written by `src/train_model.py`: the selected hyperparameters, the top of the hyperparameter grid, per-fold walk-forward results for the model and both baselines (persistence and median growth), the 2024 → 2025 holdout results with bootstrap intervals, and each feature's share of total gain. The dashboard's accuracy note on the Predictive Scenarios tab is generated from this file.
+| Column | Type | Description |
+|---|---|---|
+| `region` | str | `US` or `FL` |
+| `occ_code` | str | 6-digit SOC occupation code |
+| `response_pct` | float | Percentage points: the occupation's employment change in the 2020 release minus its average change over the 2016–2019 releases. Null where `source` is `none` |
+| `source` | str | `occupation` (the occupation's own change; it had 10,000+ employees in both 2019 and 2020 and at least two pre-2020 changes), `group` (its SOC major group's response instead) or `none` (no data for either) |
